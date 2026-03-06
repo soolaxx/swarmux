@@ -1,0 +1,6 @@
+/target
+/.tmp
+/.state
+/docs
+*.log
+.DS_Store

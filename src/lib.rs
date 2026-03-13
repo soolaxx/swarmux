@@ -462,6 +462,9 @@ fn submit_payload_from_dispatch(config: &AppConfig, args: DispatchArgs) -> Resul
     if args.pane_id.is_some() {
         return Err(anyhow!("--pane-id requires --connected"));
     }
+    if args.agent.is_some() {
+        return Err(anyhow!("--agent requires --connected"));
+    }
     if args.command.is_empty() {
         return Err(anyhow!("dispatch requires a command after --"));
     }
@@ -523,20 +526,17 @@ fn connected_submit_payload_from_dispatch(
             "--connected does not accept --repo-ref or --repo-root"
         ));
     }
+    if args.agent.is_some() && !args.command.is_empty() {
+        return Err(anyhow!(
+            "--connected does not accept both --agent and an explicit command prefix"
+        ));
+    }
 
+    let mut command = resolve_connected_command(config, &args)?;
     let prompt = args
         .prompt
+        .clone()
         .ok_or_else(|| anyhow!("--connected requires --prompt"))?;
-    let mut command = if args.command.is_empty() {
-        if config.settings.connected.command.is_empty() {
-            return Err(anyhow!(
-                "--connected requires a command prefix after -- or [connected].command in config.toml"
-            ));
-        }
-        config.settings.connected.command.clone()
-    } else {
-        args.command
-    };
 
     let pane = runtime::current_pane_context(args.pane_id.as_deref())?;
     let repo_root = infer_repo_root(&pane.pane_current_path)?;
@@ -561,6 +561,42 @@ fn connected_submit_payload_from_dispatch(
             pane_current_path: pane.pane_current_path,
         }),
     })
+}
+
+fn resolve_connected_command(config: &AppConfig, args: &DispatchArgs) -> Result<Vec<String>> {
+    if !args.command.is_empty() {
+        return Ok(args.command.clone());
+    }
+
+    if let Some(agent) = &args.agent {
+        return command_for_agent(config, agent);
+    }
+
+    if let Some(agent) = &config.settings.connected.agent {
+        return command_for_agent(config, agent);
+    }
+
+    if !config.settings.connected.command.is_empty() {
+        return Ok(config.settings.connected.command.clone());
+    }
+
+    Err(anyhow!(
+        "--connected requires a command prefix after --, [connected].command, or a configured agent"
+    ))
+}
+
+fn command_for_agent(config: &AppConfig, agent: &str) -> Result<Vec<String>> {
+    let entry = config
+        .settings
+        .agents
+        .get(agent)
+        .ok_or_else(|| anyhow!("unknown agent in config.toml: {agent}"))?;
+
+    if entry.command.is_empty() {
+        return Err(anyhow!("agent command is empty in config.toml: {agent}"));
+    }
+
+    Ok(entry.command.clone())
 }
 
 fn infer_repo_root(path: &str) -> Result<String> {

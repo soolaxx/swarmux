@@ -65,7 +65,7 @@ swarmux --output json dispatch \
 To make the command prefix optional, add a config file:
 
 ```toml
-# $SWARMUX_HOME/config.toml
+# $XDG_CONFIG_HOME/swarmux/config.toml
 [connected]
 command = ["codex", "exec"]
 ```
@@ -74,6 +74,26 @@ Then connected dispatch can omit the command prefix:
 
 ```bash
 swarmux --output json dispatch --connected --prompt "fix tests"
+```
+
+You can also configure named agent runners:
+
+```toml
+# $XDG_CONFIG_HOME/swarmux/config.toml
+[connected]
+agent = "codex"
+
+[agents.codex]
+command = ["codex", "exec"]
+
+[agents.claude]
+command = ["claude", "-p"]
+```
+
+Then dispatch can target a specific configured agent:
+
+```bash
+swarmux --output json dispatch --connected --agent claude --prompt "summarize diff"
 ```
 
 ## tmux popup mapping
@@ -95,7 +115,7 @@ tmux source-file ~/.config/tmux/tmux.conf
 Use tmux itself for the prompt UI and keep `swarmux` non-interactive:
 
 ```tmux
-bind-key D command-prompt -p "Task" "run-shell 'swarmux --output json dispatch --connected --prompt \"%1\" -- codex exec'"
+bind-key D command-prompt -p "Task" "run-shell 'swarmux --output json dispatch --connected --agent codex --prompt \"%1\"'"
 bind-key W run-shell -b 'swarmux --output json watch --tmux >/dev/null 2>&1'
 bind-key N run-shell -b 'swarmux --output json notify --tmux >/dev/null 2>&1'
 ```

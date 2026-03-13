@@ -16,7 +16,7 @@ Use tmux for the prompt UI and connected dispatch from the current pane:
 bind-key D command-prompt -p "Task" "run-shell 'swarmux --output json dispatch --connected --prompt \"%1\" -- codex exec'"
 ```
 
-To avoid repeating the command prefix, set a default in `$SWARMUX_HOME/config.toml`:
+To avoid repeating the command prefix, set a default in `$XDG_CONFIG_HOME/swarmux/config.toml`:
 
 ```toml
 [connected]
@@ -27,6 +27,25 @@ Then the binding can be:
 
 ```tmux
 bind-key D command-prompt -p "Task" "run-shell 'swarmux --output json dispatch --connected --prompt \"%1\"'"
+```
+
+For multiple runners, configure named agents:
+
+```toml
+[connected]
+agent = "codex"
+
+[agents.codex]
+command = ["codex", "exec"]
+
+[agents.claude]
+command = ["claude", "-p"]
+```
+
+Then the binding can target a configured agent:
+
+```tmux
+bind-key D command-prompt -p "Task" "run-shell 'swarmux --output json dispatch --connected --agent codex --prompt \"%1\"'"
 ```
 
 ## tmux completion notifications

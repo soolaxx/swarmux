@@ -7,6 +7,7 @@ use tempfile::TempDir;
 fn run(home: &TempDir, args: &[&str]) -> assert_cmd::assert::Assert {
     let mut command = Command::new(env!("CARGO_BIN_EXE_swarmux"));
     command.env("SWARMUX_HOME", home.path());
+    command.env("SWARMUX_CONFIG_HOME", home.path().join("config-home"));
     command.args(args);
     command.assert()
 }
@@ -31,6 +32,7 @@ fn init_creates_state_layout_and_paths_reports_it() {
     assert!(home.path().join("logs").is_dir());
     assert!(home.path().join("locks").is_dir());
     assert!(home.path().join("events.jsonl").is_file());
+    assert!(home.path().join("config-home").join("swarmux").is_dir());
 }
 
 #[test]

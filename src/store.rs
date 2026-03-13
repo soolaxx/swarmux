@@ -22,6 +22,7 @@ impl Store {
 
     pub fn ensure_layout(&self) -> Result<()> {
         fs::create_dir_all(&self.config.home)?;
+        fs::create_dir_all(self.config.config_dir())?;
         fs::create_dir_all(self.config.tasks_dir())?;
         fs::create_dir_all(self.config.logs_dir())?;
         fs::create_dir_all(self.config.locks_dir())?;

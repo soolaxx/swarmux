@@ -28,6 +28,7 @@ pub fn doctor() -> Result<()> {
 
 pub fn init(config: &AppConfig) -> Result<()> {
     std::fs::create_dir_all(&config.home)?;
+    std::fs::create_dir_all(config.config_dir())?;
     std::fs::create_dir_all(config.logs_dir())?;
     std::fs::create_dir_all(config.locks_dir())?;
     run_bd(config, &["init", "--prefix", "swx", "--json"]).map(|_| ())

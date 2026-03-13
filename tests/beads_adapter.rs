@@ -34,6 +34,7 @@ impl Harness {
         );
 
         command.env("SWARMUX_HOME", self.home.path());
+        command.env("SWARMUX_CONFIG_HOME", self.home.path().join("config-home"));
         command.env("SWARMUX_BACKEND", "beads");
         command.env("SWARMUX_FAKE_BD_ROOT", self.fake_root.path());
         command.env("PATH", path);

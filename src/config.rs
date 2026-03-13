@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -11,6 +12,7 @@ pub enum BackendKind {
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub home: PathBuf,
+    pub config_home: PathBuf,
     pub backend: BackendKind,
     pub settings: FileConfig,
 }
@@ -22,6 +24,7 @@ pub struct PathsInfo {
     pub tasks_dir: String,
     pub logs_dir: String,
     pub locks_dir: String,
+    pub config_dir: String,
     pub events_file: String,
     pub notify_file: String,
     pub config_file: String,
@@ -31,10 +34,19 @@ pub struct PathsInfo {
 pub struct FileConfig {
     #[serde(default)]
     pub connected: ConnectedConfig,
+    #[serde(default)]
+    pub agents: BTreeMap<String, AgentConfig>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct ConnectedConfig {
+    #[serde(default)]
+    pub command: Vec<String>,
+    pub agent: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct AgentConfig {
     #[serde(default)]
     pub command: Vec<String>,
 }
@@ -43,8 +55,12 @@ impl AppConfig {
     pub fn from_env() -> Result<Self> {
         let home = std::env::var_os("SWARMUX_HOME")
             .map(PathBuf::from)
-            .or_else(default_home)
+            .or_else(default_state_home)
             .unwrap_or_else(|| PathBuf::from(".swarmux"));
+        let config_home = std::env::var_os("SWARMUX_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(default_config_home)
+            .unwrap_or_else(|| PathBuf::from(".config"));
 
         let backend = match std::env::var("SWARMUX_BACKEND")
             .unwrap_or_else(|_| "files".to_string())
@@ -54,10 +70,12 @@ impl AppConfig {
             _ => BackendKind::Files,
         };
 
-        let settings = load_file_config(&home.join("config.toml"))?;
+        let config_dir = config_home.join("swarmux");
+        let settings = load_file_config(&config_dir.join("config.toml"))?;
 
         Ok(Self {
             home,
+            config_home,
             backend,
             settings,
         })
@@ -75,6 +93,10 @@ impl AppConfig {
         self.home.join("locks")
     }
 
+    pub fn config_dir(&self) -> PathBuf {
+        self.config_home.join("swarmux")
+    }
+
     pub fn events_file(&self) -> PathBuf {
         self.home.join("events.jsonl")
     }
@@ -84,7 +106,7 @@ impl AppConfig {
     }
 
     pub fn config_file(&self) -> PathBuf {
-        self.home.join("config.toml")
+        self.config_dir().join("config.toml")
     }
 
     pub fn paths_info(&self) -> PathsInfo {
@@ -97,6 +119,7 @@ impl AppConfig {
             tasks_dir: self.tasks_dir().display().to_string(),
             logs_dir: self.logs_dir().display().to_string(),
             locks_dir: self.locks_dir().display().to_string(),
+            config_dir: self.config_dir().display().to_string(),
             events_file: self.events_file().display().to_string(),
             notify_file: self.notify_file().display().to_string(),
             config_file: self.config_file().display().to_string(),
@@ -114,10 +137,14 @@ fn load_file_config(path: &std::path::Path) -> Result<FileConfig> {
     toml::from_str(&raw).with_context(|| format!("failed to parse config file: {}", path.display()))
 }
 
-fn default_home() -> Option<PathBuf> {
+fn default_state_home() -> Option<PathBuf> {
     if let Some(xdg) = std::env::var_os("XDG_STATE_HOME") {
         return Some(PathBuf::from(xdg).join("swarmux"));
     }
 
     dirs::home_dir().map(|home| home.join(".local").join("state").join("swarmux"))
+}
+
+fn default_config_home() -> Option<PathBuf> {
+    dirs::config_dir()
 }

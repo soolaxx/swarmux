@@ -82,6 +82,9 @@ pub struct DispatchArgs {
     pub pane_id: Option<String>,
 
     #[arg(long)]
+    pub agent: Option<String>,
+
+    #[arg(long)]
     pub worktree: Option<String>,
 
     #[arg(long)]

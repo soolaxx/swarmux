@@ -39,6 +39,7 @@ impl Harness {
         );
 
         command.env("SWARMUX_HOME", self.home.path());
+        command.env("SWARMUX_CONFIG_HOME", self.home.path().join("config-home"));
         command.env("SWARMUX_FAKE_TMUX_ROOT", self.fake_root.path());
         command.env("SWARMUX_FAKE_GIT_ROOT", self.fake_root.path());
         command.env(
@@ -59,6 +60,7 @@ impl Harness {
         );
 
         command.env("SWARMUX_HOME", self.home.path());
+        command.env("SWARMUX_CONFIG_HOME", self.home.path().join("config-home"));
         command.env("SWARMUX_FAKE_TMUX_ROOT", self.fake_root.path());
         command.env("SWARMUX_FAKE_GIT_ROOT", self.fake_root.path());
         command.env(
@@ -85,6 +87,7 @@ impl Harness {
         );
 
         command.env("SWARMUX_HOME", self.home.path());
+        command.env("SWARMUX_CONFIG_HOME", self.home.path().join("config-home"));
         command.env("SWARMUX_FAKE_TMUX_ROOT", self.fake_root.path());
         command.env("SWARMUX_FAKE_GIT_ROOT", self.fake_root.path());
         command.env(
@@ -341,8 +344,14 @@ fn dispatch_connected_infers_repo_and_origin_from_tmux_pane() {
 #[test]
 fn dispatch_connected_uses_configured_default_command() {
     let harness = Harness::new();
+    fs::create_dir_all(harness.home.path().join("config-home").join("swarmux")).unwrap();
     fs::write(
-        harness.home.path().join("config.toml"),
+        harness
+            .home
+            .path()
+            .join("config-home")
+            .join("swarmux")
+            .join("config.toml"),
         "[connected]\ncommand = [\"claude\", \"-p\"]\n",
     )
     .unwrap();
@@ -373,6 +382,94 @@ fn dispatch_connected_uses_configured_default_command() {
     assert_eq!(started["command"][0], "claude");
     assert_eq!(started["command"][1], "-p");
     assert_eq!(started["command"][2], "summarize repo");
+}
+
+#[test]
+fn dispatch_connected_uses_named_agent_from_config() {
+    let harness = Harness::new();
+    fs::create_dir_all(harness.home.path().join("config-home").join("swarmux")).unwrap();
+    fs::write(
+        harness
+            .home
+            .path()
+            .join("config-home")
+            .join("swarmux")
+            .join("config.toml"),
+        "[agents.codex]\ncommand = [\"codex\", \"exec\"]\n",
+    )
+    .unwrap();
+    harness.run(&["init"]).success();
+
+    let repo_root = harness.fake_root.path().join("repo");
+    let pane_path = repo_root.display().to_string();
+    let dispatched = harness
+        .run_in_tmux_pane(
+            "%44",
+            &pane_path,
+            &[
+                "--output",
+                "json",
+                "dispatch",
+                "--connected",
+                "--agent",
+                "codex",
+                "--prompt",
+                "fix lint",
+            ],
+        )
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let dispatched: Value = serde_json::from_slice(&dispatched).unwrap();
+    let started = &dispatched["started"];
+
+    assert_eq!(started["command"][0], "codex");
+    assert_eq!(started["command"][1], "exec");
+    assert_eq!(started["command"][2], "fix lint");
+}
+
+#[test]
+fn dispatch_connected_uses_default_agent_from_config() {
+    let harness = Harness::new();
+    fs::create_dir_all(harness.home.path().join("config-home").join("swarmux")).unwrap();
+    fs::write(
+        harness
+            .home
+            .path()
+            .join("config-home")
+            .join("swarmux")
+            .join("config.toml"),
+        "[connected]\nagent = \"claude\"\n\n[agents.claude]\ncommand = [\"claude\", \"-p\"]\n",
+    )
+    .unwrap();
+    harness.run(&["init"]).success();
+
+    let repo_root = harness.fake_root.path().join("repo");
+    let pane_path = repo_root.display().to_string();
+    let dispatched = harness
+        .run_in_tmux_pane(
+            "%45",
+            &pane_path,
+            &[
+                "--output",
+                "json",
+                "dispatch",
+                "--connected",
+                "--prompt",
+                "summarize diff",
+            ],
+        )
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let dispatched: Value = serde_json::from_slice(&dispatched).unwrap();
+    let started = &dispatched["started"];
+
+    assert_eq!(started["command"][0], "claude");
+    assert_eq!(started["command"][1], "-p");
+    assert_eq!(started["command"][2], "summarize diff");
 }
 
 #[test]

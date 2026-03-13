@@ -62,13 +62,31 @@ swarmux --output json dispatch \
 Configured default connected command:
 
 ```toml
-# ~/.local/state/swarmux/config.toml
+# ~/.config/swarmux/config.toml
 [connected]
 command = ["codex", "exec"]
 ```
 
 ```bash
 swarmux --output json dispatch --connected --prompt "fix tests"
+```
+
+Configured named agent runners:
+
+```toml
+# ~/.config/swarmux/config.toml
+[connected]
+agent = "codex"
+
+[agents.codex]
+command = ["codex", "exec"]
+
+[agents.claude]
+command = ["claude", "-p"]
+```
+
+```bash
+swarmux --output json dispatch --connected --agent claude --prompt "summarize diff"
 ```
 
 ## How it works

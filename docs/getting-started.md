@@ -122,7 +122,7 @@ Reload tmux:
 tmux source-file ~/.config/tmux/tmux.conf
 ```
 
-## tmux delegation and notifications
+`overview` filters rendered rows with `--scope terminal|non-terminal|all`. The default is `non-terminal`.
 
 Use tmux itself for the prompt UI and keep `swarmux` non-interactive:
 

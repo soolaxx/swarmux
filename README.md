@@ -38,6 +38,7 @@ swarmux --output json submit --json '{
 }'
 swarmux --output json list
 swarmux overview --once
+swarmux overview --once --scope all
 ```
 
 tmux-friendly dispatch without JSON quoting:

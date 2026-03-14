@@ -12,7 +12,8 @@ use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use cli::{
     Cli, Commands, DispatchArgs, DispatchMode, FailArgs, IdArgs, ListArgs, LogsArgs, NotifyArgs,
-    OutputFormat, PruneArgs, SendArgs, ShowArgs, StateArgs, StopArgs, SubmitArgs, WatchArgs,
+    OutputFormat, OverviewScope, PruneArgs, SendArgs, ShowArgs, StateArgs, StopArgs, SubmitArgs,
+    WatchArgs,
 };
 use config::{AppConfig, TaskRuntime};
 use model::{DryRunSubmitResponse, SubmitPayload, TaskMode, TaskOrigin, TaskRecord, TaskState};
@@ -358,9 +359,20 @@ fn run_overview(store: &Store, output: OutputFormat, args: cli::OverviewArgs) ->
         "failed": tasks.iter().filter(|task| task.state == TaskState::Failed).count(),
         "canceled": tasks.iter().filter(|task| task.state == TaskState::Canceled).count(),
     });
+    let filtered_tasks = tasks
+        .into_iter()
+        .filter(|task| overview_scope_matches(&task.state, &args.scope))
+        .collect::<Vec<_>>();
 
     match output {
-        OutputFormat::Json => emit(&output, &json!({ "counts": counts, "tasks": tasks })),
+        OutputFormat::Json => emit(
+            &output,
+            &json!({
+                "counts": counts,
+                "scope": overview_scope_label(&args.scope),
+                "tasks": filtered_tasks,
+            }),
+        ),
         OutputFormat::Text => {
             println!();
             println!(
@@ -373,8 +385,27 @@ fn run_overview(store: &Store, output: OutputFormat, args: cli::OverviewArgs) ->
                 counts["failed"],
                 counts["canceled"],
             );
+            for task in filtered_tasks {
+                println!("{} {} {}", task.id, state_label(&task.state), task.title);
+            }
             Ok(())
         }
+    }
+}
+
+fn overview_scope_matches(state: &TaskState, scope: &OverviewScope) -> bool {
+    match scope {
+        OverviewScope::Terminal => state.is_terminal(),
+        OverviewScope::NonTerminal => !state.is_terminal(),
+        OverviewScope::All => true,
+    }
+}
+
+fn overview_scope_label(scope: &OverviewScope) -> &'static str {
+    match scope {
+        OverviewScope::Terminal => "terminal",
+        OverviewScope::NonTerminal => "non_terminal",
+        OverviewScope::All => "all",
     }
 }
 

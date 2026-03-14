@@ -8,6 +8,8 @@ Use this binding:
 bind -n F8 display-popup -T "Swarmux" -w 90% -h 80% -E "sh -lc 'swarmux overview --once; printf \"\\nPress Enter to close...\"; read _'"
 ```
 
+`overview` defaults to `--scope non-terminal`, so the popup shows active tasks first. Use `swarmux overview --once --scope all` or `--scope terminal` when needed.
+
 ## tmux task dispatch
 
 Use tmux for the prompt UI and connected dispatch from the current pane:

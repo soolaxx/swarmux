@@ -113,6 +113,13 @@ pub enum DispatchMode {
     Manual,
 }
 
+#[derive(Debug, Clone, ValueEnum)]
+pub enum OverviewScope {
+    Terminal,
+    NonTerminal,
+    All,
+}
+
 #[derive(Debug, clap::Args)]
 pub struct ListArgs {
     #[arg(long)]
@@ -193,6 +200,9 @@ pub struct OverviewArgs {
 
     #[arg(long)]
     pub once: bool,
+
+    #[arg(long, value_enum, default_value = "non-terminal")]
+    pub scope: OverviewScope,
 }
 
 #[derive(Debug, clap::Args)]

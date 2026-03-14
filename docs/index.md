@@ -29,7 +29,7 @@ hide_title: true
 $ swarmux init
 $ swarmux --output json submit --json '{...}'
 $ swarmux --output json start &lt;id&gt;
-$ swarmux popup --once</code></pre>
+$ swarmux overview --once</code></pre>
   </div>
 </div>
 

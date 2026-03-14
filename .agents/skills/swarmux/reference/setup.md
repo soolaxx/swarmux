@@ -5,7 +5,7 @@
 Use this binding:
 
 ```tmux
-bind -n F8 display-popup -T "Swarmux" -w 90% -h 80% -E "sh -lc 'swarmux popup --once; printf \"\\nPress Enter to close...\"; read _'"
+bind -n F8 display-popup -T "Swarmux" -w 90% -h 80% -E "sh -lc 'swarmux overview --once; printf \"\\nPress Enter to close...\"; read _'"
 ```
 
 ## tmux task dispatch
@@ -13,20 +13,21 @@ bind -n F8 display-popup -T "Swarmux" -w 90% -h 80% -E "sh -lc 'swarmux popup --
 Use tmux for the prompt UI and connected dispatch from the current pane:
 
 ```tmux
-bind-key D command-prompt -p "Task" "run-shell 'swarmux --output json dispatch --connected --prompt \"%1\" -- codex exec'"
+bind-key D command-prompt -p "Task" "run-shell 'swarmux --output json dispatch --connected --pane-id \"#{pane_id}\" --prompt \"%1\" -- codex exec'"
 ```
 
 To avoid repeating the command prefix, set a default in `$XDG_CONFIG_HOME/swarmux/config.toml`:
 
 ```toml
 [connected]
+runtime = "mirrored"
 command = ["codex", "exec"]
 ```
 
 Then the binding can be:
 
 ```tmux
-bind-key D command-prompt -p "Task" "run-shell 'swarmux --output json dispatch --connected --prompt \"%1\"'"
+bind-key D command-prompt -p "Task" "run-shell 'swarmux --output json dispatch --connected --pane-id \"#{pane_id}\" --prompt \"%1\"'"
 ```
 
 For multiple runners, configure named agents:
@@ -34,6 +35,7 @@ For multiple runners, configure named agents:
 ```toml
 [connected]
 agent = "codex"
+runtime = "mirrored"
 
 [agents.codex]
 command = ["codex", "exec"]
@@ -45,7 +47,7 @@ command = ["claude", "-p"]
 Then the binding can target a configured agent:
 
 ```tmux
-bind-key D command-prompt -p "Task" "run-shell 'swarmux --output json dispatch --connected --agent codex --prompt \"%1\"'"
+bind-key D command-prompt -p "Task" "run-shell 'swarmux --output json dispatch --connected --pane-id \"#{pane_id}\" --agent codex --prompt \"%1\"'"
 ```
 
 ## tmux completion notifications
@@ -61,6 +63,14 @@ One-shot completion delivery:
 ```tmux
 bind-key N run-shell -b 'swarmux --output json notify --tmux >/dev/null 2>&1'
 ```
+
+Completion lines include a compact output excerpt:
+
+```text
+swarmux 4rh succeeded what is the time currently ...current time is 23:14:05
+```
+
+Task logs are timestamped in UTC.
 
 Reload tmux:
 

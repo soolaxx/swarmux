@@ -37,7 +37,7 @@ swarmux --output json submit --json '{
   "command": ["codex","exec","-m","gpt-5.3-codex","echo hi from task"]
 }'
 swarmux --output json list
-swarmux popup --once
+swarmux overview --once
 ```
 
 tmux-friendly dispatch without JSON quoting:
@@ -55,6 +55,7 @@ Connected dispatch from the current tmux pane:
 ```bash
 swarmux --output json dispatch \
   --connected \
+  --mirrored \
   --prompt "fix tests" \
   -- codex exec
 ```
@@ -64,6 +65,7 @@ Configured default connected command:
 ```toml
 # ~/.config/swarmux/config.toml
 [connected]
+runtime = "mirrored"
 command = ["codex", "exec"]
 ```
 
@@ -77,6 +79,7 @@ Configured named agent runners:
 # ~/.config/swarmux/config.toml
 [connected]
 agent = "codex"
+runtime = "mirrored"
 
 [agents.codex]
 command = ["codex", "exec"]
@@ -88,6 +91,14 @@ command = ["claude", "-p"]
 ```bash
 swarmux --output json dispatch --connected --agent claude --prompt "summarize diff"
 ```
+
+tmux binding for connected dispatch:
+
+```tmux
+bind-key D command-prompt -p "Task" "run-shell 'swarmux --output json dispatch --connected --pane-id \"#{pane_id}\" --prompt \"%1\"'"
+```
+
+`headless` remains the default runtime when no override is configured. `mirrored` keeps the agent process visible in the task session and mirrors pane output into logs. A true app-level TUI mode is separate and planned later; for example `codex exec` in `mirrored` mode is still the CLI runner, not the full `codex` TUI.
 
 ## How it works
 
@@ -104,9 +115,20 @@ flowchart TD
     C --> G[start or delegate]
     G --> H[runtime::start_task]
     H --> I["tmux new-session + command"]
-    I --> L[logs + exit marker]
+    I --> L[timestamped logs + exit marker]
     L --> M[reconcile updates task state]
     M --> D
 ```
 
 For completion notifications, use `swarmux notify --tmux` for one-shot delivery or `swarmux watch --tmux` for a foreground polling loop that reconciles and emits `tmux display-message` when tasks enter terminal states.
+
+`watch`/`notify` also include a compact completion excerpt from the task output:
+
+```text
+swarmux 4rh succeeded what is the time currently ...current time is 23:14:05
+```
+
+```text
+2026-03-14T10:22:31Z spawned swx-swarmux-4rh
+2026-03-14T10:22:35Z current time is 23:14:05
+```

@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Get Started
-description: "Install and run swarmux with tmux popup supervision."
+description: "Install and run swarmux with tmux overview supervision."
 ---
 
 ## Requirements
@@ -58,6 +58,7 @@ swarmux --output json dispatch \
 ```bash
 swarmux --output json dispatch \
   --connected \
+  --mirrored \
   --prompt "fix tests" \
   -- codex exec
 ```
@@ -67,6 +68,7 @@ To make the command prefix optional, add a config file:
 ```toml
 # $XDG_CONFIG_HOME/swarmux/config.toml
 [connected]
+runtime = "mirrored"
 command = ["codex", "exec"]
 ```
 
@@ -82,6 +84,7 @@ You can also configure named agent runners:
 # $XDG_CONFIG_HOME/swarmux/config.toml
 [connected]
 agent = "codex"
+runtime = "mirrored"
 
 [agents.codex]
 command = ["codex", "exec"]
@@ -96,12 +99,21 @@ Then dispatch can target a specific configured agent:
 swarmux --output json dispatch --connected --agent claude --prompt "summarize diff"
 ```
 
+Runtime choices:
+
+```text
+headless  logs-first detached runner
+mirrored  visible task session with pane output mirrored into logs
+```
+
+A true app-level TUI mode is separate and planned later. `codex exec` in `mirrored` mode is still the CLI runner shown in a tmux session, not the full `codex` TUI.
+
 ## tmux popup mapping
 
 Use this mapping to open a snapshot popup and keep it open until Enter:
 
 ```tmux
-bind -n <key> display-popup -T "Swarmux" -w 90% -h 80% -E "sh -lc 'swarmux popup --once; printf \"\\nPress Enter to close...\"; read _'"
+bind -n <key> display-popup -T "Swarmux" -w 90% -h 80% -E "sh -lc 'swarmux overview --once; printf \"\\nPress Enter to close...\"; read _'"
 ```
 
 Reload tmux:
@@ -115,9 +127,22 @@ tmux source-file ~/.config/tmux/tmux.conf
 Use tmux itself for the prompt UI and keep `swarmux` non-interactive:
 
 ```tmux
-bind-key D command-prompt -p "Task" "run-shell 'swarmux --output json dispatch --connected --agent codex --prompt \"%1\"'"
+bind-key D command-prompt -p "Task" "run-shell 'swarmux --output json dispatch --connected --pane-id \"#{pane_id}\" --agent codex --prompt \"%1\"'"
 bind-key W run-shell -b 'swarmux --output json watch --tmux >/dev/null 2>&1'
 bind-key N run-shell -b 'swarmux --output json notify --tmux >/dev/null 2>&1'
+```
+
+`watch`/`notify` show a compact completion excerpt inline:
+
+```text
+swarmux 4rh succeeded what is the time currently ...current time is 23:14:05
+```
+
+Task logs are timestamped in UTC:
+
+```text
+2026-03-14T10:22:31Z spawned swx-swarmux-4rh
+2026-03-14T10:22:35Z current time is 23:14:05
 ```
 
 ## Operator commands

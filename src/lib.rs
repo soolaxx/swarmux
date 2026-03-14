@@ -36,6 +36,15 @@ struct Notification {
     token_count: Option<String>,
 }
 
+struct TaskTableRow {
+    time: String,
+    id: String,
+    state: String,
+    title: String,
+    output_excerpt: Option<String>,
+    token_count: Option<String>,
+}
+
 struct NotifyOutcome {
     reconciled: usize,
     notifications: Vec<Notification>,
@@ -387,8 +396,31 @@ fn run_overview(store: &Store, output: OutputFormat, args: cli::OverviewArgs) ->
                 counts["failed"],
                 counts["canceled"],
             );
-            for task in filtered_tasks {
-                println!("{} {} {}", task.id, state_label(&task.state), task.title);
+            if filtered_tasks.is_empty() {
+                return Ok(());
+            }
+
+            let rows = filtered_tasks
+                .iter()
+                .map(|task| {
+                    Ok(TaskTableRow {
+                        time: task
+                            .finished_at
+                            .unwrap_or(task.updated_at)
+                            .format("%Y-%m-%dT%H:%M:%SZ")
+                            .to_string(),
+                        id: task.id.clone(),
+                        state: state_label(&task.state).to_string(),
+                        title: task.title.clone(),
+                        output_excerpt: runtime::output_excerpt(task, 25).ok().flatten(),
+                        token_count: None,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+
+            println!("{}", table_header(false));
+            for row in rows {
+                println!("{}", table_row(&row, false));
             }
             Ok(())
         }
@@ -829,9 +861,12 @@ fn emit_watch_tick(
                 return Ok(());
             }
 
-            println!("{}", watch_header(show_tokens));
+            println!("{}", table_header(show_tokens));
             for notification in &outcome.notifications {
-                println!("{}", watch_row(notification, show_tokens));
+                println!(
+                    "{}",
+                    table_row(&notification_table_row(notification), show_tokens)
+                );
             }
         }
     }
@@ -839,7 +874,23 @@ fn emit_watch_tick(
     Ok(())
 }
 
-fn watch_header(show_tokens: bool) -> String {
+fn notification_table_row(notification: &Notification) -> TaskTableRow {
+    TaskTableRow {
+        time: notification
+            .task
+            .finished_at
+            .unwrap_or(notification.task.updated_at)
+            .format("%Y-%m-%dT%H:%M:%SZ")
+            .to_string(),
+        id: notification.task.id.clone(),
+        state: state_label(&notification.task.state).to_string(),
+        title: notification.task.title.clone(),
+        output_excerpt: notification.output_excerpt.clone(),
+        token_count: notification.token_count.clone(),
+    }
+}
+
+fn table_header(show_tokens: bool) -> String {
     if show_tokens {
         format!(
             "{:<20}  {:<4}  {:<12}  {:>8}  {:<28}  {}",
@@ -853,27 +904,19 @@ fn watch_header(show_tokens: bool) -> String {
     }
 }
 
-fn watch_row(notification: &Notification, show_tokens: bool) -> String {
-    let time = notification
-        .task
-        .finished_at
-        .unwrap_or(notification.task.updated_at)
-        .format("%Y-%m-%dT%H:%M:%SZ")
-        .to_string();
-    let state = state_label(&notification.task.state);
-    let title = truncate_cell(&notification.task.title, 28);
-    let excerpt = notification.output_excerpt.as_deref().unwrap_or("");
-
+fn table_row(row: &TaskTableRow, show_tokens: bool) -> String {
+    let title = truncate_cell(&row.title, 28);
+    let excerpt = row.output_excerpt.as_deref().unwrap_or("");
     if show_tokens {
-        let tokens = notification.token_count.as_deref().unwrap_or("");
+        let tokens = row.token_count.as_deref().unwrap_or("");
         format!(
             "{:<20}  {:<4}  {:<12}  {:>8}  {:<28}  {}",
-            time, notification.task.id, state, tokens, title, excerpt
+            row.time, row.id, row.state, tokens, title, excerpt
         )
     } else {
         format!(
             "{:<20}  {:<4}  {:<12}  {:<28}  {}",
-            time, notification.task.id, state, title, excerpt
+            row.time, row.id, row.state, title, excerpt
         )
     }
 }

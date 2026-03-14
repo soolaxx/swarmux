@@ -14,7 +14,7 @@ use cli::{
     Cli, Commands, DispatchArgs, DispatchMode, FailArgs, IdArgs, ListArgs, LogsArgs, NotifyArgs,
     OutputFormat, PruneArgs, SendArgs, ShowArgs, StateArgs, StopArgs, SubmitArgs, WatchArgs,
 };
-use config::AppConfig;
+use config::{AppConfig, TaskRuntime};
 use model::{DryRunSubmitResponse, SubmitPayload, TaskMode, TaskOrigin, TaskRecord, TaskState};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
@@ -28,9 +28,15 @@ struct NotifyState {
     delivered: BTreeMap<String, String>,
 }
 
+#[derive(Clone)]
+struct Notification {
+    task: TaskRecord,
+    output_excerpt: Option<String>,
+}
+
 struct NotifyOutcome {
     reconciled: usize,
-    notifications: Vec<TaskRecord>,
+    notifications: Vec<Notification>,
 }
 
 pub fn run() -> Result<()> {
@@ -66,7 +72,7 @@ pub fn run() -> Result<()> {
         Commands::Stop(args) => run_stop(&store, cli.output, args),
         Commands::Reconcile => run_reconcile(&store, cli.output),
         Commands::Prune(args) => run_prune(&store, cli.output, args),
-        Commands::Popup(args) => run_popup(&store, cli.output, args),
+        Commands::Overview(args) => run_overview(&store, cli.output, args),
         Commands::Done(args) => {
             run_state_update(&store, cli.output, args, TaskState::Succeeded, None)
         }
@@ -328,7 +334,7 @@ fn run_doctor(store: &Store, output: OutputFormat) -> Result<()> {
     }
 }
 
-fn run_popup(store: &Store, output: OutputFormat, args: cli::PopupArgs) -> Result<()> {
+fn run_overview(store: &Store, output: OutputFormat, args: cli::OverviewArgs) -> Result<()> {
     if args.title {
         println!(
             "Swarmux - {} - {}",
@@ -356,7 +362,7 @@ fn run_popup(store: &Store, output: OutputFormat, args: cli::PopupArgs) -> Resul
     match output {
         OutputFormat::Json => emit(&output, &json!({ "counts": counts, "tasks": tasks })),
         OutputFormat::Text => {
-            println!("Swarmux popup");
+            println!();
             println!(
                 "tasks: total={} queued={} running={} waiting_input={} succeeded={} failed={} canceled={}",
                 counts["total"],
@@ -469,6 +475,7 @@ fn submit_payload_from_dispatch(config: &AppConfig, args: DispatchArgs) -> Resul
         return Err(anyhow!("dispatch requires a command after --"));
     }
 
+    let runtime = dispatch_runtime(None, &args);
     let title = args
         .title
         .unwrap_or_else(|| default_dispatch_title(&args.command));
@@ -484,6 +491,7 @@ fn submit_payload_from_dispatch(config: &AppConfig, args: DispatchArgs) -> Resul
             DispatchMode::Auto => TaskMode::Auto,
             DispatchMode::Manual => TaskMode::Manual,
         },
+        runtime,
         worktree: args.worktree,
         session: args.session,
         command: args.command,
@@ -542,12 +550,14 @@ fn connected_submit_payload_from_dispatch(
     let repo_root = infer_repo_root(&pane.pane_current_path)?;
     let repo_ref = infer_repo_ref(&repo_root);
     command.push(prompt.clone());
+    let runtime = dispatch_runtime(Some(config.settings.connected.runtime), &args);
 
     Ok(SubmitPayload {
         title: args.title.unwrap_or(prompt),
         repo_ref,
         repo_root,
         mode: TaskMode::Auto,
+        runtime,
         worktree: None,
         session: None,
         command,
@@ -597,6 +607,17 @@ fn command_for_agent(config: &AppConfig, agent: &str) -> Result<Vec<String>> {
     }
 
     Ok(entry.command.clone())
+}
+
+fn dispatch_runtime(default_runtime: Option<TaskRuntime>, args: &DispatchArgs) -> TaskRuntime {
+    if let Some(runtime) = args.runtime {
+        return runtime;
+    }
+    if args.mirrored {
+        return TaskRuntime::Mirrored;
+    }
+
+    default_runtime.unwrap_or(TaskRuntime::Headless)
 }
 
 fn infer_repo_root(path: &str) -> Result<String> {
@@ -679,7 +700,8 @@ fn notification_message(task: &TaskRecord) -> String {
     )
 }
 
-fn notification_value(task: &TaskRecord) -> Value {
+fn notification_value(notification: &Notification) -> Value {
+    let task = &notification.task;
     json!({
         "id": task.id,
         "title": task.title,
@@ -687,6 +709,7 @@ fn notification_value(task: &TaskRecord) -> Value {
         "reason": task.reason,
         "finished_at": task.finished_at,
         "message": notification_message(task),
+        "output_excerpt": notification.output_excerpt,
     })
 }
 
@@ -714,23 +737,29 @@ fn collect_notifications(store: &Store, tmux: bool) -> Result<NotifyOutcome> {
         .iter()
         .filter(|task| task.state.is_terminal())
         .filter(|task| state.delivered.get(&task.id) != Some(&notification_signature(task)))
-        .cloned()
-        .collect::<Vec<_>>();
+        .map(|task| {
+            Ok(Notification {
+                task: task.clone(),
+                output_excerpt: runtime::output_excerpt(task, 25)?,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
 
     if tmux {
         if std::env::var_os("TMUX").is_none() {
             return Err(anyhow!("notify/watch --tmux requires running inside tmux"));
         }
 
-        for task in &notifications {
-            runtime::display_message(&notification_message(task))?;
+        for notification in &notifications {
+            runtime::display_message(&notification_message(&notification.task))?;
         }
     }
 
-    for task in &notifications {
-        state
-            .delivered
-            .insert(task.id.clone(), notification_signature(task));
+    for notification in &notifications {
+        state.delivered.insert(
+            notification.task.id.clone(),
+            notification_signature(&notification.task),
+        );
     }
     save_notify_state(&notify_path, &state)?;
 
@@ -753,8 +782,16 @@ fn emit_watch_tick(output: &OutputFormat, outcome: &NotifyOutcome) -> Result<()>
             if outcome.reconciled > 0 {
                 println!("reconciled updated={}", outcome.reconciled);
             }
-            for task in &outcome.notifications {
-                println!("{}", notification_message(task));
+            for notification in &outcome.notifications {
+                if let Some(output_excerpt) = &notification.output_excerpt {
+                    println!(
+                        "{} {}",
+                        notification_message(&notification.task),
+                        output_excerpt
+                    );
+                } else {
+                    println!("{}", notification_message(&notification.task));
+                }
             }
         }
     }

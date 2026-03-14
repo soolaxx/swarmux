@@ -116,7 +116,7 @@ pub fn schema_json() -> Value {
                 "mutating": true
             },
             {
-                "name": "popup",
+                "name": "overview",
                 "json_input": false,
                 "mutating": false
             }

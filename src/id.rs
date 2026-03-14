@@ -145,6 +145,7 @@ fn base36_encode(mut num: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::TaskRuntime;
     use crate::model::TaskMode;
 
     fn sample_payload() -> SubmitPayload {
@@ -153,6 +154,7 @@ mod tests {
             repo_ref: "core".to_string(),
             repo_root: "/tmp/core".to_string(),
             mode: TaskMode::Manual,
+            runtime: TaskRuntime::Headless,
             worktree: Some("/tmp/core".to_string()),
             session: Some("manual".to_string()),
             command: vec!["echo".to_string(), "ok".to_string()],

@@ -1,3 +1,4 @@
+use crate::config::TaskRuntime;
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
@@ -38,7 +39,7 @@ pub enum Commands {
     Stop(StopArgs),
     Reconcile,
     Prune(PruneArgs),
-    Popup(PopupArgs),
+    Overview(OverviewArgs),
     Done(StateArgs),
     Fail(FailArgs),
 }
@@ -74,6 +75,12 @@ pub struct DispatchArgs {
 
     #[arg(long)]
     pub connected: bool,
+
+    #[arg(long, conflicts_with = "runtime")]
+    pub mirrored: bool,
+
+    #[arg(long, value_enum)]
+    pub runtime: Option<TaskRuntime>,
 
     #[arg(long)]
     pub prompt: Option<String>,
@@ -180,7 +187,7 @@ pub struct PruneArgs {
 }
 
 #[derive(Debug, clap::Args)]
-pub struct PopupArgs {
+pub struct OverviewArgs {
     #[arg(long)]
     pub title: bool,
 

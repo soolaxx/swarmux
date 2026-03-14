@@ -1,4 +1,4 @@
-use crate::config::AppConfig;
+use crate::config::{AppConfig, TaskRuntime};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +15,8 @@ pub struct SubmitPayload {
     pub repo_ref: String,
     pub repo_root: String,
     pub mode: TaskMode,
+    #[serde(default)]
+    pub runtime: TaskRuntime,
     #[serde(default)]
     pub worktree: Option<String>,
     #[serde(default)]
@@ -60,6 +62,8 @@ pub struct TaskRecord {
     pub repo: String,
     pub repo_root: String,
     pub mode: TaskMode,
+    #[serde(default)]
+    pub runtime: TaskRuntime,
     pub branch: Option<String>,
     pub worktree: Option<String>,
     pub session: Option<String>,
@@ -108,6 +112,7 @@ impl TaskRecord {
             repo,
             repo_root: payload.repo_root,
             mode: payload.mode,
+            runtime: payload.runtime,
             branch,
             worktree,
             session,

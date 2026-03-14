@@ -11,7 +11,7 @@ fn run(home: &TempDir, args: &[&str]) -> assert_cmd::assert::Assert {
 }
 
 #[test]
-fn popup_title_and_once_render_summary() {
+fn overview_title_and_once_render_summary() {
     let home = TempDir::new().unwrap();
     run(&home, &["init"]).success();
 
@@ -46,12 +46,13 @@ fn popup_title_and_once_render_summary() {
     )
     .success();
 
-    run(&home, &["popup", "--title"])
+    run(&home, &["overview", "--title"])
         .success()
         .stdout(predicate::str::contains("Swarmux"));
 
-    run(&home, &["popup", "--once"])
+    run(&home, &["overview", "--once"])
         .success()
+        .stdout(predicate::str::contains("Swarmux popup").not())
         .stdout(predicate::str::contains("total=1"))
         .stdout(predicate::str::contains("succeeded=1"));
 }

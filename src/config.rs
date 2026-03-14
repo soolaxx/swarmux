@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -43,12 +44,22 @@ pub struct ConnectedConfig {
     #[serde(default)]
     pub command: Vec<String>,
     pub agent: Option<String>,
+    #[serde(default)]
+    pub runtime: TaskRuntime,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct AgentConfig {
     #[serde(default)]
     pub command: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskRuntime {
+    #[default]
+    Headless,
+    Mirrored,
 }
 
 impl AppConfig {

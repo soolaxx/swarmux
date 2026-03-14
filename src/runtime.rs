@@ -1,3 +1,4 @@
+use crate::config::TaskRuntime;
 use crate::model::{TaskRecord, TaskState};
 use anyhow::{Context, Result, anyhow};
 use std::fs::{self, OpenOptions};
@@ -37,7 +38,13 @@ pub fn start_task(task: &TaskRecord) -> Result<TaskRecord> {
         .as_deref()
         .ok_or_else(|| anyhow!("task is missing worktree"))?;
 
-    spawn_tmux_session(session, workdir, &task.log_file, &task.command)?;
+    spawn_tmux_session(
+        session,
+        workdir,
+        &task.log_file,
+        &task.command,
+        task.runtime,
+    )?;
 
     let mut next = task.clone();
     next.state = TaskState::Running;
@@ -51,7 +58,9 @@ pub fn send_input(task: &TaskRecord, input: &str) -> Result<()> {
         .session
         .as_deref()
         .ok_or_else(|| anyhow!("task is missing session"))?;
-    run_tmux(["send-keys", "-t", session, input, "C-m"]).map(|_| ())
+    run_tmux(["send-keys", "-t", session, input, "C-m"])?;
+    append_log_line(&task.log_file, &format!("> {input}"))?;
+    Ok(())
 }
 
 pub fn display_message(message: &str) -> Result<()> {
@@ -99,14 +108,28 @@ pub fn attach_task(task: &TaskRecord) -> Result<()> {
 }
 
 pub fn read_logs(task: &TaskRecord, raw: bool, lines: usize) -> Result<String> {
-    if let Some(session) = &task.session
-        && let Ok(text) = capture_pane(session, lines)
-    {
-        return Ok(if raw { text } else { sanitize_logs(&text) });
-    }
-
     let text = tail_file(&task.log_file, lines)?;
     Ok(if raw { text } else { sanitize_logs(&text) })
+}
+
+pub fn output_excerpt(task: &TaskRecord, max_chars: usize) -> Result<Option<String>> {
+    let text = tail_file(&task.log_file, 50)?;
+    let visible = sanitize_logs(&text)
+        .lines()
+        .map(strip_log_timestamp)
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if visible.is_empty() {
+        return Ok(None);
+    }
+
+    let chars = visible.chars().collect::<Vec<_>>();
+    let start = chars.len().saturating_sub(max_chars);
+    let excerpt = chars[start..].iter().collect::<String>();
+    Ok(Some(format!("...{excerpt}")))
 }
 
 pub fn reconcile(
@@ -219,11 +242,42 @@ fn spawn_tmux_session(
     workdir: &str,
     log_file: &str,
     command: &[String],
+    runtime: TaskRuntime,
 ) -> Result<()> {
     if let Some(parent) = std::path::Path::new(log_file).parent() {
         fs::create_dir_all(parent)?;
     }
-    let script = r#"log_file="$1"; shift; : > "$log_file"; "$@" >> "$log_file" 2>&1; code=$?; printf '__SWARMUX_EXIT_CODE__=%s\n' "$code" >> "$log_file"; exit "$code""#;
+    fs::write(log_file, "")?;
+    let script_path = launch_script_path(log_file, runtime, "run");
+
+    match runtime {
+        TaskRuntime::Headless => {
+            write_launch_script(&script_path, headless_launch_script())?;
+            spawn_headless_tmux_session(session, workdir, &script_path, log_file, command)
+        }
+        TaskRuntime::Mirrored => {
+            write_launch_script(&script_path, mirrored_launch_script())?;
+            let pipe_script_path = launch_script_path(log_file, runtime, "pipe");
+            write_launch_script(&pipe_script_path, pipe_launch_script())?;
+            spawn_mirrored_tmux_session(
+                session,
+                workdir,
+                &script_path,
+                &pipe_script_path,
+                log_file,
+                command,
+            )
+        }
+    }
+}
+
+fn spawn_headless_tmux_session(
+    session: &str,
+    workdir: &str,
+    script_path: &str,
+    log_file: &str,
+    command: &[String],
+) -> Result<()> {
     let mut args = vec![
         "new-session".to_string(),
         "-d".to_string(),
@@ -232,9 +286,7 @@ fn spawn_tmux_session(
         "-c".to_string(),
         workdir.to_string(),
         "/bin/sh".to_string(),
-        "-lc".to_string(),
-        script.to_string(),
-        "--".to_string(),
+        script_path.to_string(),
         log_file.to_string(),
     ];
     args.extend(command.iter().cloned());
@@ -243,15 +295,36 @@ fn spawn_tmux_session(
     run_tmux_dynamic(&args_ref).map(|_| ())
 }
 
-fn capture_pane(session: &str, lines: usize) -> Result<String> {
-    run_tmux([
-        "capture-pane",
-        "-p",
-        "-S",
-        &format!("-{}", lines.max(1)),
-        "-t",
-        session,
-    ])
+fn spawn_mirrored_tmux_session(
+    session: &str,
+    workdir: &str,
+    script_path: &str,
+    pipe_script_path: &str,
+    log_file: &str,
+    command: &[String],
+) -> Result<()> {
+    run_tmux(["new-session", "-d", "-s", session, "-c", workdir])?;
+
+    let pipe_command = format!(
+        "/bin/sh {} {}",
+        shell_quote(pipe_script_path),
+        shell_quote(log_file)
+    );
+    run_tmux_dynamic(&["pipe-pane", "-o", "-t", session, &pipe_command])?;
+
+    let mut args = vec![
+        "respawn-pane".to_string(),
+        "-k".to_string(),
+        "-t".to_string(),
+        session.to_string(),
+        "/bin/sh".to_string(),
+        script_path.to_string(),
+        log_file.to_string(),
+    ];
+    args.extend(command.iter().cloned());
+
+    let args_ref = args.iter().map(String::as_str).collect::<Vec<_>>();
+    run_tmux_dynamic(&args_ref).map(|_| ())
 }
 
 fn has_tmux_session(session: &str) -> Result<bool> {
@@ -314,6 +387,17 @@ fn sanitize_logs(text: &str) -> String {
         .join("\n")
 }
 
+fn append_log_line(path: &str, line: &str) -> Result<()> {
+    let mut file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(path)
+        .with_context(|| format!("failed to open log file: {path}"))?;
+    use std::io::Write;
+    writeln!(file, "{} {}", log_timestamp(), line)
+        .with_context(|| format!("failed to append log file: {path}"))
+}
+
 fn tail_file(path: &str, lines: usize) -> Result<String> {
     let mut file =
         fs::File::open(path).with_context(|| format!("failed to read log file: {path}"))?;
@@ -337,12 +421,115 @@ fn read_exit_code(path: &str) -> Result<Option<i32>> {
     let text =
         fs::read_to_string(path).with_context(|| format!("failed to read log file: {path}"))?;
     for line in text.lines().rev() {
-        if let Some(value) = line.strip_prefix(EXIT_MARKER) {
+        if let Some((_, value)) = line.split_once(EXIT_MARKER) {
             return Ok(value.parse::<i32>().ok());
         }
     }
 
     Ok(None)
+}
+
+fn log_timestamp() -> String {
+    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()
+}
+
+fn strip_log_timestamp(line: &str) -> &str {
+    let bytes = line.as_bytes();
+    if bytes.len() > 20
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes[10] == b'T'
+        && bytes[13] == b':'
+        && bytes[16] == b':'
+        && bytes[19] == b'Z'
+        && bytes[20] == b' '
+    {
+        &line[21..]
+    } else {
+        line
+    }
+}
+
+fn shell_quote(value: &str) -> String {
+    let mut quoted = String::from("'");
+    for ch in value.chars() {
+        if ch == '\'' {
+            quoted.push_str("'\"'\"'");
+        } else {
+            quoted.push(ch);
+        }
+    }
+    quoted.push('\'');
+    quoted
+}
+
+fn launch_script_path(log_file: &str, runtime: TaskRuntime, kind: &str) -> String {
+    let suffix = match runtime {
+        TaskRuntime::Headless => "headless",
+        TaskRuntime::Mirrored => "mirrored",
+    };
+    format!("{log_file}.{suffix}.{kind}.sh")
+}
+
+fn write_launch_script(path: &str, script: &str) -> Result<()> {
+    fs::write(path, script).with_context(|| format!("failed to write launch script: {path}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(path)
+            .with_context(|| format!("failed to stat launch script: {path}"))?
+            .permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(path, perms)
+            .with_context(|| format!("failed to chmod launch script: {path}"))?;
+    }
+    Ok(())
+}
+
+fn headless_launch_script() -> &'static str {
+    r#"#!/bin/sh
+set -u
+log_file="$1"
+shift
+: > "$log_file"
+fifo="$(mktemp -u "${TMPDIR:-/tmp}/swarmux.XXXXXX.fifo")"
+rm -f "$fifo"
+mkfifo "$fifo"
+{
+  while IFS= read -r line || [ -n "$line" ]; do
+    printf '%s %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$line" >> "$log_file"
+  done < "$fifo"
+} &
+reader=$!
+"$@" > "$fifo" 2>&1
+code=$?
+wait "$reader"
+rm -f "$fifo"
+printf '%s __SWARMUX_EXIT_CODE__=%s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$code" >> "$log_file"
+exit "$code"
+"#
+}
+
+fn mirrored_launch_script() -> &'static str {
+    r#"#!/bin/sh
+set -u
+log_file="$1"
+shift
+"$@"
+code=$?
+printf '%s __SWARMUX_EXIT_CODE__=%s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$code" >> "$log_file"
+exit "$code"
+"#
+}
+
+fn pipe_launch_script() -> &'static str {
+    r#"#!/bin/sh
+set -u
+log_file="$1"
+while IFS= read -r line || [ -n "$line" ]; do
+  printf '%s %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$line" >> "$log_file"
+done
+"#
 }
 
 fn acquire_lock(path: &std::path::Path) -> Result<LockGuard> {

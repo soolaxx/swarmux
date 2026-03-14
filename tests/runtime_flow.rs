@@ -134,6 +134,7 @@ fn manual_start_send_logs_reconcile_and_stop_work() {
     harness
         .run(&["--output", "json", "logs", &task_id, "--raw"])
         .success()
+        .stdout(predicate::str::contains("T"))
         .stdout(predicate::str::contains("run tests"));
 
     fs::remove_file(
@@ -332,6 +333,7 @@ fn dispatch_connected_infers_repo_and_origin_from_tmux_pane() {
     assert_eq!(started["repo_root"], repo_root.display().to_string());
     assert_eq!(started["repo"], "repo");
     assert_eq!(started["mode"], "auto");
+    assert_eq!(started["runtime"], "headless");
     assert_eq!(started["command"][0], "codex");
     assert_eq!(started["command"][1], "exec");
     assert_eq!(started["command"][2], "fix tests");
@@ -339,6 +341,41 @@ fn dispatch_connected_infers_repo_and_origin_from_tmux_pane() {
     assert_eq!(started["origin"]["pane_current_path"], pane_path);
     assert_eq!(started["origin"]["session_name"], "origin-session");
     assert_eq!(started["origin"]["window_name"], "origin-window");
+}
+
+#[test]
+fn dispatch_connected_mirrored_flag_sets_runtime() {
+    let harness = Harness::new();
+    harness.run(&["init"]).success();
+
+    let repo_root = harness.fake_root.path().join("repo");
+    let pane_path = repo_root.display().to_string();
+    let dispatched = harness
+        .run_in_tmux_pane(
+            "%52",
+            &pane_path,
+            &[
+                "--output",
+                "json",
+                "dispatch",
+                "--connected",
+                "--mirrored",
+                "--prompt",
+                "inspect mirrored",
+                "--",
+                "codex",
+                "exec",
+            ],
+        )
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let dispatched: Value = serde_json::from_slice(&dispatched).unwrap();
+    let started = &dispatched["started"];
+
+    assert_eq!(started["runtime"], "mirrored");
+    assert_eq!(started["state"], "running");
 }
 
 #[test]
@@ -473,6 +510,48 @@ fn dispatch_connected_uses_default_agent_from_config() {
 }
 
 #[test]
+fn dispatch_connected_uses_configured_default_runtime() {
+    let harness = Harness::new();
+    fs::create_dir_all(harness.home.path().join("config-home").join("swarmux")).unwrap();
+    fs::write(
+        harness
+            .home
+            .path()
+            .join("config-home")
+            .join("swarmux")
+            .join("config.toml"),
+        "[connected]\nruntime = \"mirrored\"\ncommand = [\"codex\", \"exec\"]\n",
+    )
+    .unwrap();
+    harness.run(&["init"]).success();
+
+    let repo_root = harness.fake_root.path().join("repo");
+    let pane_path = repo_root.display().to_string();
+    let dispatched = harness
+        .run_in_tmux_pane(
+            "%53",
+            &pane_path,
+            &[
+                "--output",
+                "json",
+                "dispatch",
+                "--connected",
+                "--prompt",
+                "configured mirrored",
+            ],
+        )
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let dispatched: Value = serde_json::from_slice(&dispatched).unwrap();
+    let started = &dispatched["started"];
+
+    assert_eq!(started["runtime"], "mirrored");
+    assert_eq!(started["command"][0], "codex");
+}
+
+#[test]
 fn notify_reports_terminal_tasks_once_and_can_emit_tmux_messages() {
     let harness = Harness::new();
     harness.run(&["init"]).success();
@@ -516,6 +595,12 @@ fn notify_reports_terminal_tasks_once_and_can_emit_tmux_messages() {
     assert_eq!(notified["count"], 1);
     assert_eq!(notified["notifications"][0]["id"], task_id);
     assert_eq!(notified["notifications"][0]["state"], "succeeded");
+    assert!(
+        notified["notifications"][0]["output_excerpt"]
+            .as_str()
+            .unwrap()
+            .starts_with("...")
+    );
 
     let display_log = fs::read_to_string(harness.fake_root.path().join("display.log")).unwrap();
     assert!(display_log.contains("swarmux"));
@@ -588,6 +673,47 @@ fn watch_can_emit_tmux_messages_and_exit_after_max_iterations() {
     assert!(display_log.contains("Watch task"));
 }
 
+#[test]
+fn watch_text_mode_can_print_output_excerpt_for_completed_tasks() {
+    let harness = Harness::new();
+    harness.run(&["init"]).success();
+
+    let payload = format!(
+        "{{\"title\":\"Watch tail task\",\"repo_ref\":\"core\",\"repo_root\":\"{}\",\"mode\":\"manual\",\"worktree\":\"/tmp/swarmux-watch-tail\",\"session\":\"swarmux-watch-tail\",\"command\":[\"echo\",\"watch-tail\"]}}",
+        harness.fake_root.path().join("repo").display()
+    );
+
+    let submitted = harness
+        .run(&["--output", "json", "submit", "--json", &payload])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let submitted: Value = serde_json::from_slice(&submitted).unwrap();
+    let task_id = submitted["id"].as_str().unwrap().to_owned();
+
+    harness
+        .run(&["--output", "json", "start", &task_id])
+        .success()
+        .stdout(predicate::str::contains("\"state\":\"running\""));
+
+    fs::remove_file(
+        harness
+            .fake_root
+            .path()
+            .join("sessions")
+            .join("swarmux-watch-tail.pane"),
+    )
+    .unwrap();
+
+    harness
+        .run(&["watch", "--interval-ms", "1", "--max-iterations", "1"])
+        .success()
+        .stdout(predicate::str::contains("swarmux"))
+        .stdout(predicate::str::contains("Watch tail task"))
+        .stdout(predicate::str::contains("..."));
+}
+
 fn write_fake_tmux(path: PathBuf, root: &Path) {
     let script = format!(
         r#"#!/usr/bin/env bash
@@ -599,6 +725,10 @@ shift || true
 
 session_file() {{
   printf '%s/%s.pane\n' "$sessions" "$1"
+}}
+
+session_log_file() {{
+  printf '%s/%s.logfile\n' "$sessions" "$1"
 }}
 
 case "$cmd" in
@@ -617,14 +747,50 @@ case "$cmd" in
         -s) session="$2"; shift 2 ;;
         -c) workdir="$2"; shift 2 ;;
         -d) shift ;;
-        --) shift; log_file="$1"; break ;;
+        /bin/sh) shift 2; log_file="$1"; break ;;
         *) shift ;;
       esac
     done
-    mkdir -p "$(dirname "$log_file")"
     printf 'spawned %s\n' "$session" > "$(session_file "$session")"
     printf 'cwd %s\n' "$workdir" >> "$(session_file "$session")"
-    printf 'spawned %s\n__SWARMUX_EXIT_CODE__=0\n' "$session" > "$log_file"
+    if [ -n "$log_file" ]; then
+      mkdir -p "$(dirname "$log_file")"
+      printf '%s\n' "$log_file" > "$(session_log_file "$session")"
+      printf '2026-03-13T22:00:00Z spawned %s\n' "$session" > "$log_file"
+      printf '2026-03-13T22:00:01Z __SWARMUX_EXIT_CODE__=0\n' >> "$log_file"
+    fi
+    ;;
+  pipe-pane)
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) session="$2"; shift 2 ;;
+        -o) shift ;;
+        *)
+          log_file="$(printf '%s' "$1" | sed -n "s/.*swarmux-pipe '\\([^']*\\)'.*/\\1/p")"
+          if [ -n "$log_file" ]; then
+            printf '%s\n' "$log_file" > "$(session_log_file "$session")"
+          fi
+          shift
+          ;;
+      esac
+    done
+    ;;
+  respawn-pane)
+    session=""
+    log_file=""
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -t) session="$2"; shift 2 ;;
+        -k) shift ;;
+        /bin/sh) shift 2; log_file="$1"; break ;;
+        *) shift ;;
+      esac
+    done
+    if [ -n "$log_file" ]; then
+      printf '%s\n' "$log_file" > "$(session_log_file "$session")"
+      printf '2026-03-13T22:00:02Z codex mirrored started\n' >> "$log_file"
+      printf '2026-03-13T22:00:03Z __SWARMUX_EXIT_CODE__=0\n' >> "$log_file"
+    fi
     ;;
   capture-pane)
     while [ "$#" -gt 0 ]; do
@@ -640,14 +806,27 @@ case "$cmd" in
       case "$1" in
         -t) session="$2"; shift 2 ;;
         C-m) shift ;;
-        C-c) printf '^C\n' >> "$(session_file "$session")"; shift ;;
-        *) printf '%s\n' "$1" >> "$(session_file "$session")"; shift ;;
+        C-c)
+          printf '^C\n' >> "$(session_file "$session")"
+          if [ -f "$(session_log_file "$session")" ]; then
+            printf '2026-03-13T22:00:02Z ^C\n' >> "$(cat "$(session_log_file "$session")")"
+          fi
+          shift
+          ;;
+        *)
+          printf '%s\n' "$1" >> "$(session_file "$session")"
+          if [ -f "$(session_log_file "$session")" ]; then
+            printf '2026-03-13T22:00:02Z > %s\n' "$1" >> "$(cat "$(session_log_file "$session")")"
+          fi
+          shift
+          ;;
       esac
     done
     ;;
   kill-session)
     if [ "${{1:-}}" = "-t" ]; then
       rm -f "$(session_file "$2")"
+      rm -f "$(session_log_file "$2")"
       exit 0
     fi
     exit 1

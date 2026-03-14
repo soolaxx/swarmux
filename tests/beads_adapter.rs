@@ -279,7 +279,7 @@ case "$cmd" in
         -s) session="$2"; shift 2 ;;
         -c) shift 2 ;;
         -d) shift ;;
-        --) shift; log_file="$1"; break ;;
+        /bin/sh) shift 2; log_file="$1"; break ;;
         *) shift ;;
       esac
     done

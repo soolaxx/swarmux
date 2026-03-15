@@ -83,6 +83,11 @@ pub fn schema_json() -> Value {
                 "mutating": true
             },
             {
+                "name": "wait",
+                "json_input": false,
+                "mutating": true
+            },
+            {
                 "name": "watch",
                 "json_input": false,
                 "mutating": true

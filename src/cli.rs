@@ -33,6 +33,7 @@ pub enum Commands {
     Show(ShowArgs),
     Logs(LogsArgs),
     Notify(NotifyArgs),
+    Wait(WaitArgs),
     Watch(WatchArgs),
     Send(SendArgs),
     SetRef(SetRefArgs),
@@ -161,18 +162,37 @@ pub struct NotifyArgs {
 }
 
 #[derive(Debug, clap::Args)]
-pub struct WatchArgs {
-    #[arg(long)]
-    pub tmux: bool,
+pub struct WaitArgs {
+    pub ids: Vec<String>,
 
     #[arg(long)]
-    pub show_tokens: bool,
+    pub states: Option<String>,
 
     #[arg(long, default_value_t = 2_000)]
     pub interval_ms: u64,
 
     #[arg(long)]
-    pub max_iterations: Option<u64>,
+    pub timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct WatchArgs {
+    pub ids: Vec<String>,
+
+    #[arg(long)]
+    pub states: Option<String>,
+
+    #[arg(long, default_value_t = 2_000)]
+    pub interval_ms: u64,
+
+    #[arg(long)]
+    pub timeout_ms: Option<u64>,
+
+    #[arg(long, default_value_t = 30)]
+    pub lines: usize,
+
+    #[arg(long)]
+    pub raw: bool,
 }
 
 #[derive(Debug, clap::Args)]

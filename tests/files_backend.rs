@@ -2,6 +2,9 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use regex::Regex;
 use serde_json::Value;
+use std::process::Command as StdCommand;
+use std::thread;
+use std::time::Duration;
 use tempfile::TempDir;
 
 fn run(home: &TempDir, args: &[&str]) -> assert_cmd::assert::Assert {
@@ -226,4 +229,134 @@ fn set_ref_updates_external_ref_in_files_backend() {
         .stdout(predicate::str::contains(
             "\"external_ref\":\"https://github.com/example/repo/pull/123\"",
         ));
+}
+
+#[test]
+fn wait_returns_the_first_matching_task() {
+    let home = TempDir::new().unwrap();
+    run(&home, &["init"]).success();
+
+    let payload = r#"{
+      "title":"Wait task",
+      "repo_ref":"core",
+      "repo_root":"/tmp/core",
+      "mode":"manual",
+      "worktree":"/tmp/swarmux-wait",
+      "session":"swarmux-wait",
+      "command":["echo","wait"]
+    }"#;
+
+    let submitted = run(&home, &["--output", "json", "submit", "--json", payload])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let submitted: Value = serde_json::from_slice(&submitted).unwrap();
+    let task_id = submitted["id"].as_str().unwrap().to_owned();
+
+    let home_path = home.path().to_path_buf();
+    let delayed_task_id = task_id.clone();
+    let worker = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(150));
+        let status = StdCommand::new(env!("CARGO_BIN_EXE_swarmux"))
+            .env("SWARMUX_HOME", &home_path)
+            .env("SWARMUX_CONFIG_HOME", home_path.join("config-home"))
+            .args([
+                "--output",
+                "json",
+                "done",
+                &delayed_task_id,
+                "--reason",
+                "manual_done",
+            ])
+            .status()
+            .unwrap();
+        assert!(status.success());
+    });
+
+    run(
+        &home,
+        &[
+            "--output",
+            "json",
+            "wait",
+            &task_id,
+            "--states",
+            "succeeded",
+            "--interval-ms",
+            "50",
+            "--timeout-ms",
+            "2000",
+        ],
+    )
+    .success()
+    .stdout(predicate::str::contains("\"state\":\"succeeded\""));
+
+    worker.join().unwrap();
+}
+
+#[test]
+fn watch_streams_polls_until_a_task_matches() {
+    let home = TempDir::new().unwrap();
+    run(&home, &["init"]).success();
+
+    let payload = r#"{
+      "title":"Watch task",
+      "repo_ref":"core",
+      "repo_root":"/tmp/core",
+      "mode":"manual",
+      "worktree":"/tmp/swarmux-watch",
+      "session":"swarmux-watch",
+      "command":["echo","watch"]
+    }"#;
+
+    let submitted = run(&home, &["--output", "json", "submit", "--json", payload])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let submitted: Value = serde_json::from_slice(&submitted).unwrap();
+    let task_id = submitted["id"].as_str().unwrap().to_owned();
+
+    let home_path = home.path().to_path_buf();
+    let delayed_task_id = task_id.clone();
+    let worker = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(150));
+        let status = StdCommand::new(env!("CARGO_BIN_EXE_swarmux"))
+            .env("SWARMUX_HOME", &home_path)
+            .env("SWARMUX_CONFIG_HOME", home_path.join("config-home"))
+            .args([
+                "--output",
+                "json",
+                "done",
+                &delayed_task_id,
+                "--reason",
+                "manual_done",
+            ])
+            .status()
+            .unwrap();
+        assert!(status.success());
+    });
+
+    run(
+        &home,
+        &[
+            "--output",
+            "json",
+            "watch",
+            &task_id,
+            "--states",
+            "succeeded",
+            "--interval-ms",
+            "50",
+            "--timeout-ms",
+            "2000",
+        ],
+    )
+    .success()
+    .stdout(predicate::str::contains("\"type\":\"poll\""))
+    .stdout(predicate::str::contains("\"type\":\"matched\""))
+    .stdout(predicate::str::contains("\"state\":\"succeeded\""));
+
+    worker.join().unwrap();
 }

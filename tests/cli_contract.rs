@@ -12,6 +12,7 @@ fn schema_is_available_as_machine_readable_json() {
         .stdout(predicate::str::contains("\"dispatch\""))
         .stdout(predicate::str::contains("\"submit\""))
         .stdout(predicate::str::contains("\"notify\""))
+        .stdout(predicate::str::contains("\"wait\""))
         .stdout(predicate::str::contains("\"watch\""))
         .stdout(predicate::str::contains("\"set-ref\""))
         .stdout(predicate::str::contains("\"json_input\""))

@@ -13,12 +13,12 @@ use clap::Parser;
 use cli::{
     Cli, Commands, DispatchArgs, DispatchMode, FailArgs, IdArgs, ListArgs, LogsArgs, NotifyArgs,
     OutputFormat, OverviewScope, PruneArgs, SendArgs, SetRefArgs, ShowArgs, StateArgs, StopArgs,
-    SubmitArgs, WatchArgs,
+    SubmitArgs, WaitArgs, WatchArgs,
 };
 use config::{AppConfig, TaskRuntime};
 use model::{DryRunSubmitResponse, SubmitPayload, TaskMode, TaskOrigin, TaskRecord, TaskState};
 use serde_json::{Map, Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
@@ -50,6 +50,34 @@ struct NotifyOutcome {
     notifications: Vec<Notification>,
 }
 
+struct WaitOptions {
+    states: BTreeSet<String>,
+    interval_ms: u64,
+    timeout_ms: Option<u64>,
+}
+
+struct WatchRenderOptions {
+    lines: usize,
+    raw: bool,
+}
+
+struct WatchTaskView {
+    id: String,
+    state: String,
+    preview: String,
+}
+
+struct WatchPoll {
+    poll_count: u64,
+    missing_ids: Vec<String>,
+    tasks: Vec<WatchTaskView>,
+}
+
+enum WaitStep {
+    Pending(WatchPoll),
+    Matched(Box<TaskRecord>),
+}
+
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
     let config = AppConfig::from_env()?;
@@ -77,6 +105,7 @@ pub fn run() -> Result<()> {
         Commands::Show(args) => run_show(&store, cli.output, args),
         Commands::Logs(args) => run_logs(&store, cli.output, args),
         Commands::Notify(args) => run_notify(&store, cli.output, args),
+        Commands::Wait(args) => run_wait(&store, cli.output, args),
         Commands::Watch(args) => run_watch(&store, cli.output, args),
         Commands::Send(args) => run_send(&store, cli.output, args),
         Commands::SetRef(args) => run_set_ref(&store, cli.output, args),
@@ -213,19 +242,47 @@ fn run_notify(store: &Store, output: OutputFormat, args: NotifyArgs) -> Result<(
     }
 }
 
+fn run_wait(store: &Store, output: OutputFormat, args: WaitArgs) -> Result<()> {
+    let options = parse_wait_options(args.states.as_deref(), args.interval_ms, args.timeout_ms)?;
+    let task = wait_for_tasks(store, &args.ids, &options)?;
+    emit(&output, &task)
+}
+
 fn run_watch(store: &Store, output: OutputFormat, args: WatchArgs) -> Result<()> {
-    let mut iterations = 0u64;
+    let options = parse_wait_options(args.states.as_deref(), args.interval_ms, args.timeout_ms)?;
+    let render = WatchRenderOptions {
+        lines: args.lines,
+        raw: args.raw,
+    };
+    let mut poll_count = 0u64;
+    let started_at = std::time::Instant::now();
 
     loop {
-        let outcome = collect_notifications(store, args.tmux, args.show_tokens)?;
-        emit_watch_tick(&output, &outcome, args.show_tokens)?;
-
-        iterations += 1;
-        if args.max_iterations.is_some_and(|max| iterations >= max) {
-            return Ok(());
+        match wait_step(
+            store,
+            &args.ids,
+            &options,
+            Some(&render),
+            started_at,
+            poll_count,
+        )? {
+            WaitStep::Pending(poll) => {
+                emit_task_watch_poll(&output, &poll)?;
+                poll_count = poll.poll_count;
+                thread::sleep(Duration::from_millis(options.interval_ms));
+            }
+            WaitStep::Matched(task) => {
+                if matches!(output, OutputFormat::Json) {
+                    println!(
+                        "{}",
+                        serde_json::to_string(&json!({ "type": "matched", "task": task }))?
+                    );
+                } else {
+                    emit(&OutputFormat::Text, &task)?;
+                }
+                return Ok(());
+            }
         }
-
-        thread::sleep(Duration::from_millis(args.interval_ms));
     }
 }
 
@@ -243,6 +300,23 @@ fn run_set_ref(store: &Store, output: OutputFormat, args: SetRefArgs) -> Result<
         config::BackendKind::Beads => beads::set_external_ref(store.paths(), &args.id, args.url),
     }?;
     emit(&output, &task)
+}
+
+fn parse_wait_options(
+    states: Option<&str>,
+    interval_ms: u64,
+    timeout_ms: Option<u64>,
+) -> Result<WaitOptions> {
+    let states = parse_wait_states(states)?;
+    if states.is_empty() {
+        return Err(anyhow!("--states must not be empty"));
+    }
+
+    Ok(WaitOptions {
+        states,
+        interval_ms: interval_ms.max(50),
+        timeout_ms,
+    })
 }
 
 fn run_attach(store: &Store, args: IdArgs) -> Result<()> {
@@ -884,6 +958,40 @@ fn emit_watch_tick(
     Ok(())
 }
 
+fn emit_task_watch_poll(output: &OutputFormat, poll: &WatchPoll) -> Result<()> {
+    match output {
+        OutputFormat::Json => {
+            println!(
+                "{}",
+                serde_json::to_string(&json!({
+                    "type": "poll",
+                    "poll_count": poll.poll_count,
+                    "missing_ids": poll.missing_ids,
+                    "tasks": poll.tasks.iter().map(|task| json!({
+                        "id": task.id,
+                        "state": task.state,
+                        "preview": task.preview,
+                    })).collect::<Vec<_>>(),
+                }))?
+            );
+        }
+        OutputFormat::Text => {
+            println!("poll {}:", poll.poll_count);
+            for task in &poll.tasks {
+                println!("- {} ({})", task.id, task.state);
+                if !task.preview.trim().is_empty() {
+                    println!("{}", task.preview);
+                }
+            }
+            if !poll.missing_ids.is_empty() {
+                println!("missing: {}", poll.missing_ids.join(", "));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn notification_table_row(notification: &Notification) -> TaskTableRow {
     TaskTableRow {
         time: notification
@@ -958,6 +1066,151 @@ fn state_label(state: &TaskState) -> &'static str {
         TaskState::Failed => "failed",
         TaskState::Canceled => "canceled",
     }
+}
+
+fn parse_wait_states(raw: Option<&str>) -> Result<BTreeSet<String>> {
+    let raw_states = raw.unwrap_or("waiting_input,succeeded,failed,canceled");
+    let mut states = BTreeSet::new();
+
+    for part in raw_states
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+    {
+        states.insert(parse_task_state(part)?.to_string());
+    }
+
+    Ok(states)
+}
+
+fn parse_task_state(raw: &str) -> Result<&'static str> {
+    match raw {
+        "queued" => Ok("queued"),
+        "dispatching" => Ok("dispatching"),
+        "running" => Ok("running"),
+        "waiting_input" => Ok("waiting_input"),
+        "succeeded" => Ok("succeeded"),
+        "failed" => Ok("failed"),
+        "canceled" => Ok("canceled"),
+        _ => Err(anyhow!("unknown task state: {raw}")),
+    }
+}
+
+fn wait_for_tasks(store: &Store, ids: &[String], options: &WaitOptions) -> Result<TaskRecord> {
+    let mut poll_count = 0u64;
+    let started_at = std::time::Instant::now();
+
+    loop {
+        match wait_step(store, ids, options, None, started_at, poll_count)? {
+            WaitStep::Pending(poll) => {
+                poll_count = poll.poll_count;
+                thread::sleep(Duration::from_millis(options.interval_ms));
+            }
+            WaitStep::Matched(task) => return Ok(*task),
+        }
+    }
+}
+
+fn wait_step(
+    store: &Store,
+    ids: &[String],
+    options: &WaitOptions,
+    render: Option<&WatchRenderOptions>,
+    started_at: std::time::Instant,
+    previous_polls: u64,
+) -> Result<WaitStep> {
+    let ids = normalized_task_ids(ids)?;
+    let poll_count = previous_polls + 1;
+
+    reconcile_store(store)?;
+    let mut snapshots = Vec::new();
+    let mut missing_ids = Vec::new();
+
+    for id in &ids {
+        match get_task(store, id) {
+            Ok(task) => snapshots.push(task),
+            Err(error) if is_task_missing(&error) => missing_ids.push(id.clone()),
+            Err(error) => return Err(error),
+        }
+    }
+
+    if poll_count == 1 && !missing_ids.is_empty() {
+        return Err(anyhow!("unknown task id(s): {}", missing_ids.join(", ")));
+    }
+    if missing_ids.len() == ids.len() {
+        return Err(anyhow!("all watched tasks disappeared: {}", ids.join(", ")));
+    }
+
+    if let Some(task) = snapshots
+        .iter()
+        .find(|task| options.states.contains(state_label(&task.state)))
+        .cloned()
+    {
+        return Ok(WaitStep::Matched(Box::new(task)));
+    }
+
+    if options
+        .timeout_ms
+        .is_some_and(|limit| started_at.elapsed() >= Duration::from_millis(limit))
+    {
+        return Err(anyhow!(
+            "timed out waiting for tasks ({}) to reach states: {}",
+            ids.join(", "),
+            options
+                .states
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+
+    let tasks = snapshots
+        .iter()
+        .map(|task| {
+            let preview = render
+                .map(|render| {
+                    runtime::read_logs(task, render.raw, render.lines).unwrap_or_default()
+                })
+                .unwrap_or_default();
+            WatchTaskView {
+                id: task.id.clone(),
+                state: state_label(&task.state).to_string(),
+                preview,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    Ok(WaitStep::Pending(WatchPoll {
+        poll_count,
+        missing_ids,
+        tasks,
+    }))
+}
+
+fn normalized_task_ids(ids: &[String]) -> Result<Vec<String>> {
+    let normalized = ids
+        .iter()
+        .map(|id| id.trim())
+        .filter(|id| !id.is_empty())
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    if normalized.is_empty() {
+        return Err(anyhow!("at least one task id is required"));
+    }
+    Ok(normalized)
+}
+
+fn is_task_missing(error: &anyhow::Error) -> bool {
+    if error.chain().any(|source| {
+        source
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|inner| inner.kind() == std::io::ErrorKind::NotFound)
+    }) {
+        return true;
+    }
+
+    error.to_string().contains("task not found")
 }
 
 fn command_available(name: &str) -> bool {

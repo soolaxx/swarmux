@@ -145,6 +145,51 @@ fn beads_backend_supports_start_and_reconcile() {
         .stdout(predicate::str::contains("\"state\":\"succeeded\""));
 }
 
+#[test]
+fn beads_backend_supports_set_ref() {
+    let harness = Harness::new();
+    harness.run(&["init"]).success();
+
+    let payload = r#"{
+      "title":"Beads ref",
+      "repo_ref":"core",
+      "repo_root":"/tmp/core",
+      "mode":"manual",
+      "worktree":"/tmp/swarmux-beads-ref",
+      "session":"swarmux-beads-ref",
+      "command":["echo","ref"]
+    }"#;
+
+    let submitted = harness
+        .run(&["--output", "json", "submit", "--json", payload])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let submitted: serde_json::Value = serde_json::from_slice(&submitted).unwrap();
+    let task_id = submitted["id"].as_str().unwrap().to_owned();
+
+    harness
+        .run(&[
+            "--output",
+            "json",
+            "set-ref",
+            &task_id,
+            "https://github.com/example/repo/pull/456",
+        ])
+        .success()
+        .stdout(predicate::str::contains(
+            "\"external_ref\":\"https://github.com/example/repo/pull/456\"",
+        ));
+
+    harness
+        .run(&["--output", "json", "show", &task_id])
+        .success()
+        .stdout(predicate::str::contains(
+            "\"external_ref\":\"https://github.com/example/repo/pull/456\"",
+        ));
+}
+
 fn write_fake_bd(path: PathBuf, root: &Path) {
     let script = format!(
         r#"#!/usr/bin/env bash

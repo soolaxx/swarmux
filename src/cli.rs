@@ -35,6 +35,7 @@ pub enum Commands {
     Notify(NotifyArgs),
     Watch(WatchArgs),
     Send(SendArgs),
+    SetRef(SetRefArgs),
     Attach(IdArgs),
     Stop(StopArgs),
     Reconcile,
@@ -180,6 +181,12 @@ pub struct SendArgs {
 
     #[arg(long)]
     pub input: String,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct SetRefArgs {
+    pub id: String,
+    pub url: String,
 }
 
 #[derive(Debug, clap::Args)]

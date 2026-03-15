@@ -138,6 +138,14 @@ pub fn set_state(
     show(config, id)
 }
 
+pub fn set_external_ref(config: &AppConfig, id: &str, external_ref: String) -> Result<TaskRecord> {
+    run_bd(
+        config,
+        &["update", id, "--external-ref", &external_ref, "--json"],
+    )?;
+    show(config, id)
+}
+
 fn run_bd(config: &AppConfig, args: &[&str]) -> Result<String> {
     let output = Command::new("bd")
         .current_dir(&config.home)

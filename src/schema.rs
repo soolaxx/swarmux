@@ -93,6 +93,11 @@ pub fn schema_json() -> Value {
                 "mutating": true
             },
             {
+                "name": "set-ref",
+                "json_input": false,
+                "mutating": true
+            },
+            {
                 "name": "attach",
                 "json_input": false,
                 "mutating": false

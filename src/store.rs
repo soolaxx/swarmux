@@ -125,6 +125,15 @@ impl Store {
         Ok(task)
     }
 
+    pub fn set_external_ref(&self, id: &str, external_ref: String) -> Result<TaskRecord> {
+        self.ensure_layout()?;
+        let mut task = self.get(id)?;
+        task.external_ref = Some(external_ref);
+        task.updated_at = Utc::now();
+        self.write_task(&task)?;
+        Ok(task)
+    }
+
     fn task_path(&self, id: &str) -> PathBuf {
         self.config.tasks_dir().join(format!("{id}.json"))
     }

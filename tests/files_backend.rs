@@ -182,3 +182,48 @@ fn show_and_list_support_field_projection() {
     assert_eq!(first.as_object().unwrap().len(), 2);
     assert_eq!(first["state"], "queued");
 }
+
+#[test]
+fn set_ref_updates_external_ref_in_files_backend() {
+    let home = TempDir::new().unwrap();
+    run(&home, &["init"]).success();
+
+    let payload = r#"{
+      "title":"Ref task",
+      "repo_ref":"core",
+      "repo_root":"/tmp/core",
+      "mode":"manual",
+      "worktree":"/tmp/swarmux-ref",
+      "session":"swarmux-ref",
+      "command":["echo","ref"]
+    }"#;
+
+    let submitted = run(&home, &["--output", "json", "submit", "--json", payload])
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let submitted: Value = serde_json::from_slice(&submitted).unwrap();
+    let task_id = submitted["id"].as_str().unwrap().to_owned();
+
+    run(
+        &home,
+        &[
+            "--output",
+            "json",
+            "set-ref",
+            &task_id,
+            "https://github.com/example/repo/pull/123",
+        ],
+    )
+    .success()
+    .stdout(predicate::str::contains(
+        "\"external_ref\":\"https://github.com/example/repo/pull/123\"",
+    ));
+
+    run(&home, &["--output", "json", "show", &task_id])
+        .success()
+        .stdout(predicate::str::contains(
+            "\"external_ref\":\"https://github.com/example/repo/pull/123\"",
+        ));
+}

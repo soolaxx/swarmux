@@ -13,6 +13,7 @@ fn schema_is_available_as_machine_readable_json() {
         .stdout(predicate::str::contains("\"submit\""))
         .stdout(predicate::str::contains("\"notify\""))
         .stdout(predicate::str::contains("\"watch\""))
+        .stdout(predicate::str::contains("\"set-ref\""))
         .stdout(predicate::str::contains("\"json_input\""))
         .stdout(predicate::str::contains(
             "\"runtime_values\":[\"headless\",\"mirrored\",\"tui\"]",

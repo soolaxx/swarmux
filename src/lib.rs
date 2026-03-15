@@ -12,8 +12,8 @@ use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use cli::{
     Cli, Commands, DispatchArgs, DispatchMode, FailArgs, IdArgs, ListArgs, LogsArgs, NotifyArgs,
-    OutputFormat, OverviewScope, PruneArgs, SendArgs, ShowArgs, StateArgs, StopArgs, SubmitArgs,
-    WatchArgs,
+    OutputFormat, OverviewScope, PruneArgs, SendArgs, SetRefArgs, ShowArgs, StateArgs, StopArgs,
+    SubmitArgs, WatchArgs,
 };
 use config::{AppConfig, TaskRuntime};
 use model::{DryRunSubmitResponse, SubmitPayload, TaskMode, TaskOrigin, TaskRecord, TaskState};
@@ -79,6 +79,7 @@ pub fn run() -> Result<()> {
         Commands::Notify(args) => run_notify(&store, cli.output, args),
         Commands::Watch(args) => run_watch(&store, cli.output, args),
         Commands::Send(args) => run_send(&store, cli.output, args),
+        Commands::SetRef(args) => run_set_ref(&store, cli.output, args),
         Commands::Attach(args) => run_attach(&store, args),
         Commands::Stop(args) => run_stop(&store, cli.output, args),
         Commands::Reconcile => run_reconcile(&store, cli.output),
@@ -233,6 +234,15 @@ fn run_send(store: &Store, output: OutputFormat, args: SendArgs) -> Result<()> {
     let task = get_task(store, &args.id)?;
     runtime::send_input(&task, &args.input)?;
     emit(&output, &json!({"ok": true, "id": task.id}))
+}
+
+fn run_set_ref(store: &Store, output: OutputFormat, args: SetRefArgs) -> Result<()> {
+    require_task_id(&args.id)?;
+    let task = match store.paths().backend {
+        config::BackendKind::Files => store.set_external_ref(&args.id, args.url),
+        config::BackendKind::Beads => beads::set_external_ref(store.paths(), &args.id, args.url),
+    }?;
+    emit(&output, &task)
 }
 
 fn run_attach(store: &Store, args: IdArgs) -> Result<()> {

